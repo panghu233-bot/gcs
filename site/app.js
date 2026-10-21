@@ -9,7 +9,9 @@
   try { const stored = localStorage.getItem(key); if(stored) { data = M.validate(JSON.parse(stored)); selected = data.npcs[0]?.id || ''; loadMessage = '已恢复上次的本地工作区'; } } catch { loadMessage = '本地暂存不可用或格式异常；已载入演示。请用 JSON 备份。'; }
   const meta = {npcs:['NPC 人物','CHARACTERS','人物'], events:['剧情事件','STORY EVENTS','事件'], cards:['卡牌设计','CARD LIBRARY','卡牌']};
   const realCards = () => module==='cards' && window.GCSProject.getState().connected;
-  const current = () => data[module].find(x=>x.id===selected);
+  const realNPCs = () => module==='npcs' && window.GCSProject.getState().connected;
+  const npcRecords = () => window.GCSProject.getState().npcRecords || [];
+  const current = () => (realNPCs()?npcRecords():data[module]).find(x=>x.id===selected);
   const label = x => x.name || x.title || '未命名';
   const find = (g,id) => data[g].find(x=>x.id===id);
   const options = (g,value,empty='未关联',filter=()=>true) => `<option value="">${esc(empty)}</option>` + data[g].filter(filter).map(x=>`<option value="${esc(x.id)}" ${x.id===value?'selected':''}>${esc(label(x))}</option>`).join('');
@@ -28,19 +30,34 @@
   function go(g,id) { if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    $('#npc-count').textContent=data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
+    $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
-    $('#add-btn').hidden=realCards();
-    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
+    $('#add-btn').hidden=realCards()||realNPCs();
+    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 来源可追溯 · 只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
     const connection=window.GCSProject.getState();
-    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC / 剧情为演示内容':data.project.name+' / 演示项目';
+    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 只读 · 剧情演示':data.project.name+' / 演示项目';
     if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
+    if(realNPCs()){
+      const all=npcRecords(),hits=all.filter(x=>(x.name+' '+x.portraitRef+' '+x.sources.join(' ')).toLowerCase().includes(query.toLowerCase()));
+      $('#library-en').textContent='GAME / 只读';$('#list-count').textContent=hits.length+' / '+all.length;
+      $('#record-list').innerHTML=hits.length?hits.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:'<span class="record-symbol">◉</span>'}<span class="record-info"><span class="record-title">${esc(x.name)}</span><span class="record-sub">${esc(x.npcKind==='hero'?'英雄 · 本地来源':'养成人物 · 本地来源')}</span></span></button>`).join(''):empty(connection.npcError?'NPC 识别失败，请查看中间的错误说明':query?'没有匹配的人物':'没有找到可验证的 NPC 人物');
+      return;
+    }
     const records=data[module].filter(x=>JSON.stringify(x).toLowerCase().includes(query.toLowerCase()));
     $('#list-count').textContent=records.length+' / '+data[module].length;
     $('#record-list').innerHTML=records.length?records.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${module==='npcs'&&x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:`<span class="record-symbol">${module==='events'?'☷':module==='cards'?'◇':'◉'}</span>`}<span class="record-info"><span class="record-title">${esc(label(x))}</span><span class="record-sub">${esc(module==='npcs'?x.role:module==='events'?`${x.dialogues.length} 句对白 · ${x.choices.length} 个选项`:`${x.kind} · ${x.rarity} · 费用 ${x.cost}`)}</span></span></button>`).join(''):empty(query?'没有匹配的内容':'列表为空，点击 ＋ 新建');
     if(module==='cards')$('#library-en').textContent='DEMO / 未连接游戏项目';
   }
   function render() {
+    if(realNPCs()){
+      const state=window.GCSProject.getState();
+      if(!npcRecords().some(n=>n.id===selected))selected=npcRecords()[0]?.id||'';
+      renderList();const n=current();
+      if(state.npcError){$('#editor').innerHTML='<div class="npc-studio"><h2>真实 NPC 加载失败</h2><p>'+esc(state.npcError)+'</p><p>卡牌项目仍可正常使用；未回退显示演示 NPC。</p></div>';$('#preview').innerHTML='<div class="preview-label">真实 NPC / 未能加载</div>';}
+      else if(!n){$('#editor').innerHTML=empty('没有从当前游戏项目识别到真实 NPC。');$('#preview').innerHTML='<div class="preview-label">真实 NPC / 无数据</div>';}
+      else{$('#editor').innerHTML=window.GCSNPCStudio.renderRealEditor(n);$('#preview').innerHTML=window.GCSNPCStudio.renderRealPreview(n);}
+      return;
+    }
     if(realCards()){const state=window.GCSProject.getState();if(!state.records.some(r=>r.id===selected))selected=state.records[0]?.id || '';renderList();window.GCSGameCards.render(state.records.find(r=>r.id===selected),state.branches,$('#editor'),$('#preview'));return;}
     if(!current()) selected=data[module][0]?.id || '';
     renderList(); renderEditor(); renderPreview();
@@ -79,7 +96,7 @@
   function changed(full=false) { persist(); if(realCards()){render();return;} renderList(); if(full)renderEditor(); else if($('#record-heading'))$('#record-heading').textContent=label(current()); renderPreview(); }
   function mutate(callback) { callback(); changed(true); }
   function newRecord() {
-    if(realCards())return;
+    if(realCards()||realNPCs())return;
     const id=module.slice(0,-1)+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);
     const x=module==='npcs'?{id,name:'新人物',role:'待设定',tags:'',bio:'',image:'',color:'#9aacf0'}:module==='events'?{id,title:'新事件',summary:'',participants:[],dialogues:[],choices:[]}:{id,name:'新卡牌',kind:'技能',rarity:'普通',cost:1,power:0,description:'',owner:'',source:'',upgrades:[],image:'',color:'#9aacf0'};
     data[module].push(x);selected=id;query='';$('#search').value='';persist();render();toast('已新建'+meta[module][2]);
@@ -89,7 +106,8 @@
     const b=e.target.closest('button');if(!b||b.disabled)return;
     if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
-    if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);renderEditor();renderPreview();return;}
+    if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);if(realNPCs())render();else{renderEditor();renderPreview();}return;}
+    if(realNPCs()&&a!=='select')return;
     if(module==='npcs' && a==='npc-go-portrait'){window.GCSNPCStudio.setTab('portrait');renderEditor();return;}
     if(module==='npcs' && a==='npc-event-add'){
       const id=$('#npc-event-candidate')?.value,ev=data.events.find(e=>e.id===id);
@@ -125,7 +143,7 @@
     if(a==='read'){readState={event:x.id,index:0};renderReader();$('#reader').showModal();}
   });
   function applyField(t) {
-    if(realCards())return;
+    if(realCards()||realNPCs())return;
     const x=current();if(!x)return;
     if(module==='npcs' && t.dataset.npcField){
       const k=t.dataset.npcField;
@@ -141,7 +159,7 @@
   }
   $('#editor').addEventListener('input',e=>{if(e.target.tagName!=='SELECT'&&e.target.type!=='checkbox')applyField(e.target);});
   $('#editor').addEventListener('change',e=>{
-    if(realCards())return;
+    if(realCards()||realNPCs())return;
     const t=e.target,x=current();
     if(module==='npcs' && t.dataset.npcField && (t.tagName==='SELECT'||t.type==='checkbox')){applyField(t);return;}
     if(t.tagName==='SELECT' && t.dataset.upgrade===undefined)applyField(t);
@@ -149,7 +167,7 @@
     if(t.dataset.upgrade!==undefined){if(!t.value){mutate(()=>x.upgrades.splice(Number(t.dataset.upgrade),1));}else checkUpgrade(()=>x.upgrades[Number(t.dataset.upgrade)]=t.value);}
   });
   $('#editor').addEventListener('focusout',e=>{
-    if(realCards())return;
+    if(realCards()||realNPCs())return;
     const t=e.target;
     if(t.dataset.bind==='name'||t.dataset.bind==='title'){if(!t.value.trim()){t.value='未命名'+meta[module][2];applyField(t);toast('名称不能为空，已设为“'+t.value+'”');}}
     if(t.type==='number'&&(!t.validity.valid||t.value==='')){t.value=current()[t.dataset.bind];toast('请输入 0～999 的整数；已保留上次有效数值。');}
@@ -171,7 +189,7 @@
     try {const imported=M.validate(JSON.parse(await file.text()));confirmAction('导入“'+imported.project.name+'”？',`将用 ${imported.npcs.length} 个人物、${imported.events.length} 个事件、${imported.cards.length} 张卡牌替换当前工作区。未导出的修改会被覆盖。`,()=>{data=imported;module='npcs';selected=data.npcs[0]?.id||'';query='';$('#search').value='';persist();render();toast('JSON 导入成功，全部关联已恢复');});}catch(err){toast('导入失败，原有数据未变：'+(err instanceof SyntaxError?'JSON 文件格式错误':err.message));}
   };
   $('#image-file').onchange=async e=>{
-    const file=e.target.files[0],record=current();if(!file||!record)return;
+    const file=e.target.files[0],record=current();if(realNPCs()||!file||!record)return;
     if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024){toast('请使用不超过 2 MB 的 PNG、JPG 或 WebP 图片');return;}
     try {const url=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('图片读取失败'));r.readAsDataURL(file);});await new Promise((resolve,reject)=>{const im=new Image();im.onload=resolve;im.onerror=()=>reject(new Error('图片内容损坏，无法预览'));im.src=url;});record.image=url;changed();toast('图片已内嵌，保存 JSON 时会一起保留');}catch(err){toast(err.message);}
   };
