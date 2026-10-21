@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Game Content Studio · 内容工作台</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="npc-studio.css">
 </head>
 <body>
   <header class="topbar">
@@ -27,11 +28,11 @@
   <footer class="statusbar"><span><i></i> <span id="status-text">本地工作区就绪</span></span><span>GCS 0.5.1 <em>·</em> 内容格式 v1 <em>·</em> 卡牌内存编辑</span></footer>
   <input id="json-file" type="file" accept="application/json,.json" hidden><input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
   <div id="toast" role="status" aria-live="polite"></div>
-  <dialog id="help"><h2>开始编辑你的内容</h2><p>点击「打开游戏项目」选择游戏根文件夹，自动加载卡牌与升级分支。连接后「卡牌设计」直接显示真实卡牌，可编辑确认的字段和分支数值。编辑只作用于内存副本，可查看差异、撤销、导出草稿；点击「应用修改到游戏」并检查差异、选择项目外备份目录及授权写入后才会覆盖两份 JSON。刷新前请导出未应用草稿；未连接时显示演示卡牌。支持文件夹记忆的浏览器会在下次打开时恢复连接，必要时点击「重新授权」。其他浏览器每次只需重新选择整个文件夹。只记住访问句柄，不缓存游戏数据；断开项目会清除该记忆。</p><p>从左侧切换 NPC、剧情和卡牌。所有表单可直接编辑，修改后在当前浏览器本地自动保存。</p><ol><li>在 NPC 中修改姓名、背景，点击关联事件进入剧情。</li><li>在剧情中增删、排序对白，设置参与人物和选项目标；点击“试读”亲自选择分支。</li><li>在卡牌中修改属性、所属人物、来源事件和升级目标，右侧卡面同步更新。</li><li>点击“保存 JSON”下载完整项目；在任意浏览器重新导入即可恢复，包括上传的图片。</li></ol><p>图片支持 PNG / JPG / WebP，每张最多 2 MB。图片内嵌在 JSON 中。浏览器本地记录不是文件备份，建议导出 JSON。</p><p><strong>在线版说明：</strong>网页程序公开发布，但你选择的卡牌文件只在浏览器本地读取，不会自动上传。修改的演示项目暂存在此浏览器中，不会同步到其他设备或自动写回《凝顾》。请定期导出 JSON 备份；从旧版切换到在线版时，需要先导出再导入。</p><p>演示不包含战斗结算、条件表达式、游戏引擎接入、多人协作或版本管理。试读只演示剧情路径，不执行卡牌奖励。</p><button class="primary" id="close-help">开始创作</button></dialog>
+  <dialog id="help"><h2>开始编辑你的内容</h2><p>点击「打开游戏项目」选择游戏根文件夹，自动加载卡牌与升级分支。连接后「卡牌设计」直接显示真实卡牌，可编辑确认的字段和分支数值。编辑只作用于内存副本，可查看差异、撤销、导出草稿；点击「应用修改到游戏」并检查差异、选择项目外备份目录及授权写入后才会覆盖两份 JSON。刷新前请导出未应用草稿；未连接时显示演示卡牌。支持文件夹记忆的浏览器会在下次打开时恢复连接，必要时点击「重新授权」。其他浏览器每次只需重新选择整个文件夹。只记住访问句柄，不缓存游戏数据；断开项目会清除该记忆。</p><p>从左侧切换 NPC、剧情和卡牌。NPC 已升级为人物、出场、英雄玩法与战斗关联工作台；NPC/剧情仍是演示数据，只有卡牌模块接入了真实游戏卡牌。演示表单的修改会在当前浏览器本地自动暂存。</p><ol><li>在 NPC 中修改姓名、背景，点击关联事件进入剧情。</li><li>在剧情中增删、排序对白，设置参与人物和选项目标；点击“试读”亲自选择分支。</li><li>在卡牌中修改属性、所属人物、来源事件和升级目标，右侧卡面同步更新。</li><li>点击“保存 JSON”下载完整项目；在任意浏览器重新导入即可恢复，包括上传的图片。</li></ol><p>图片支持 PNG / JPG / WebP，每张最多 2 MB。图片内嵌在 JSON 中。浏览器本地记录不是文件备份，建议导出 JSON。</p><p><strong>在线版说明：</strong>网页程序公开发布，但你选择的卡牌文件只在浏览器本地读取，不会自动上传。修改的演示项目暂存在此浏览器中，不会同步到其他设备或自动写回《凝顾》。请定期导出 JSON 备份；从旧版切换到在线版时，需要先导出再导入。</p><p>演示不包含战斗结算、条件表达式、游戏引擎接入、多人协作或版本管理。试读只演示剧情路径，不执行卡牌奖励。</p><button class="primary" id="close-help">开始创作</button></dialog>
   <dialog id="reader"><div id="reader-content"></div></dialog>
   <dialog id="confirm"><h2 id="confirm-title"></h2><p id="confirm-message"></p><div class="dialog-actions"><button id="confirm-no">取消</button><button id="confirm-yes" class="danger">确认</button></div></dialog>
   <dialog id="apply-dialog" aria-label="检查并应用卡牌修改"><div class="apply-heading"><h2>应用修改到游戏</h2><button id="apply-close">关闭</button></div><p>仅对下面两份卡牌 JSON 中已编辑的字段值做局部替换，保留其他原始文本；无法安全定位时拒绝保存。先在游戏项目外创建两份原文件的备份并读回校验，再应用修改。请先关闭游戏和其他正在编辑这些文件的程序。</p><div id="apply-summary"></div><p class="hint">浏览器不能原子提交两个文件。通常失败会自动回滚；断电、磁盘故障或外部并发修改时，可能需要从备份手动恢复。这里不会自动重试。</p><button id="apply-backup">选择项目外的备份文件夹</button><p id="apply-backup-status">尚未选择备份位置</p><p id="apply-status" role="status" aria-live="polite"></p><div class="dialog-actions"><button id="apply-confirm" class="primary" disabled>授权写入并应用</button></div></dialog>
   <input id="project-folder" type="file" webkitdirectory multiple hidden>
-  <script src="model.js"></script><script src="ninggu-adapter.js"></script><script src="card-workspace.js"></script><script src="game-project.js"></script><script src="vendor/jsonc-parser.js"></script><script src="json-value-patch.js"></script><script src="game-writer.js"></script><script src="apply-controller.js"></script><script src="native-cards.js"></script><script src="app.js"></script>
+  <script src="model.js"></script><script src="ninggu-adapter.js"></script><script src="card-workspace.js"></script><script src="game-project.js"></script><script src="vendor/jsonc-parser.js"></script><script src="json-value-patch.js"></script><script src="game-writer.js"></script><script src="apply-controller.js"></script><script src="native-cards.js"></script><script src="npc-studio.js"></script><script src="app.js"></script>
 </body>
 </html>
