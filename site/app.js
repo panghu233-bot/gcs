@@ -31,9 +31,9 @@
     $('#npc-count').textContent=data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
     $('#add-btn').hidden=realCards();
-    $('.library-foot').textContent=realCards()?'游戏项目 · 只读浏览':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
+    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
     const connection=window.GCSProject.getState();
-    $('.project-label').textContent=connection.connected?connection.name+' / 游戏卡牌只读 · NPC / 剧情为演示内容':data.project.name+' / 演示项目';
+    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC / 剧情为演示内容':data.project.name+' / 演示项目';
     if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
     const records=data[module].filter(x=>JSON.stringify(x).toLowerCase().includes(query.toLowerCase()));
     $('#list-count').textContent=records.length+' / '+data[module].length;
@@ -173,6 +173,6 @@
     renderReader();
   });
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();if(!$('dialog[open]'))$('#export-btn').click();}});
-  window.addEventListener('gcs-project-change',()=>render());
+  window.addEventListener('gcs-project-change',event=>{if(event.detail?.kind==='draft' && realCards()){renderList();window.GCSGameCards.refresh?.();}else render();});
   render();$('#save-state').textContent=loadMessage.includes('不可用')?'暂存异常 · 请保存 JSON':loadMessage?'✓ 已恢复本地暂存':'演示项目 · 修改自动暂存';if(loadMessage)toast(loadMessage);
 })();

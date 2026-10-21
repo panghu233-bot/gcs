@@ -90,8 +90,42 @@
     if (data.retain) parts.push('保留');
     return parts.join('；') || '没有可概括的固定效果，请查看原始字段。';
   }
+  const editableNumbers = new Set('cost damage block hits draw chill heal weak freeze'.split(' '));
+  function fieldSpec(card,key,branch=false) {
+    if(branch) return additive.has(key) && typeof card.modifiers?.[key]==='number' ? {key,label:labels[key] || key,type:'number',min:-Number.MAX_SAFE_INTEGER} : null;
+    if(key==='name' && typeof card.name==='string') return {key,label:'名称',type:'text'};
+    if(editableNumbers.has(key) && own(card,key))return {key,label:labels[key],type:'number',min:key==='cost' && card.x_cost ? -1 : key==='hits'?1:0};
+    return null;
+  }
+  function coerce(spec,value) {
+    if(spec.type==='text'){if(typeof value!=='string' || !value.trim())throw new Error('名称不能为空');return value;}
+    if(value==='' || typeof value==='string'&&!value.trim() || typeof value==='boolean' || value===null)throw new Error('请输入整数');
+    const number=Number(value);if(!Number.isSafeInteger(number) || number<spec.min)throw new Error('需要不小于 '+spec.min+' 的安全整数');return number;
+  }
+  function validateDocuments(documents) {
+    const records=readRecords(documents.cards),branches=readBranches(documents.branches),ids=new Set(records.map(r=>r.id));
+    if(!records.length)throw new Error('卡牌列表不能为空');
+    for(const record of records){const c=record.value;if(typeof c.name!=='string'||!c.name.trim())throw new Error(record.id+'：名称无效');
+      for(const key of editableNumbers)if(own(c,key)){const spec=fieldSpec(c,key);if(typeof c[key]!=='number')throw new Error(record.id+' / '+key+'：需要数字');coerce(spec,c[key]);}
+    }
+    for(const [id,list] of Object.entries(branches)) {
+      if(!ids.has(id))throw new Error('分支引用了不存在的卡牌：'+id);
+      for(const b of list) for(const [key,value] of Object.entries(b.modifiers)) {
+        if(additive.has(key) && (typeof value!=='number'||!Number.isSafeInteger(value)))throw new Error(b.id+' / '+key+'：修正必须是整数');
+        if(replacement.has(key) && typeof value!=='boolean')throw new Error(b.id+' / '+key+'：需要布尔值');
+      }
+    }
+    for(const record of records)for(const branch of branches[record.id]||[]){const p=preview(record,branch);if(p.changes.some(c=>typeof c.after==='number'&&!Number.isSafeInteger(c.after)))throw new Error(branch.id+'：升级后的数值超出安全整数范围');}
+    return {records,branches};
+  }
+  function editableFields(documents) {
+    const result=[];
+    documents.cards.cards.forEach((card,index)=>{for(const key of Object.keys(card)){const spec=fieldSpec(card,key);if(spec)result.push({...spec,document:'cards',path:['cards',index,key],cardId:card.id,branchId:null});}});
+    for(const [cardId,list] of Object.entries(documents.branches.branches)) list.forEach((branch,index)=>{for(const key of Object.keys(branch.modifiers)){const spec=fieldSpec(branch,key,true);if(spec)result.push({...spec,document:'branches',path:['branches',cardId,index,'modifiers',key],cardId,branchId:branch.id});}});
+    return result;
+  }
   const projectFiles = {cards:"data/cards/basic_cards.json",branches:"data/cards/special_upgrade_branches.json"};
-  const api = {projectFiles,readRecords,readBranches,preview,describe,labels,cardName:r=>r.value.name || r.id};
+  const api = {validateDocuments,editableFields,coerce,projectFiles,readRecords,readBranches,preview,describe,labels,cardName:r=>r.value.name || r.id};
   root.GCSNingguAdapter = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
