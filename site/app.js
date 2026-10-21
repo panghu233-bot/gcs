@@ -25,7 +25,7 @@
     try { localStorage.setItem(key,JSON.stringify(data)); storageFailed=false; $('#save-state').textContent='✓ 已自动暂存 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
     catch { $('#save-state').textContent='暂存失败 · 请保存 JSON'; if(!storageFailed)toast('浏览器本地空间不足或被禁用。修改仍在当前页面，请保存 JSON。'); storageFailed=true; }
   }
-  function go(g,id) { if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
+  function go(g,id) { if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
     $('#npc-count').textContent=data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
@@ -50,11 +50,7 @@
     if(!x) { $('#editor').innerHTML=empty(`还没有${meta[module][2]}<br><button class="primary" data-action="new">＋ 新建${meta[module][2]}</button>`); return; }
     let body='';
     if(module==='npcs') {
-      body=section('基础资料',`<div class="form-grid">${input('人物姓名','name',x.name)}${input('身份 / 职业','role',x.role)}</div>${input('标签（用逗号分隔）','tags',x.tags)}${textarea('人物背景','bio',x.bio)}${input('主题色','color',x.color,'color')}`);
-      const events=data.events.filter(e=>e.participants.includes(x.id));
-      body+=section('关联事件',events.map(e=>jump('events',e.id,e.title,`${e.dialogues.length} 句对白 · ${e.choices.length} 个选项`,'☷')).join('')||empty('暂未参与事件。可前往剧情模块勾选此人物。'),`<small>${events.length} 个事件</small>`);
-      const cards=data.cards.filter(c=>c.owner===x.id);
-      body+=section('人物卡牌',cards.map(c=>jump('cards',c.id,c.name,`${c.kind} · ${c.rarity}`,'◇')).join('')||empty('暂未关联卡牌。可在卡牌中选择所属人物。'),`<small>${cards.length} 张卡牌</small>`);
+      body=window.GCSNPCStudio.renderEditor(x,data);
     } else if(module==='events') {
       body=section('事件资料',input('事件标题','title',x.title)+textarea('事件概要','summary',x.summary));
       body+=section('参与人物',`<div class="chips">${data.npcs.map(n=>`<label class="participant"><input type="checkbox" data-participant="${esc(n.id)}" ${x.participants.includes(n.id)?'checked':''}>${esc(n.name)}</label>`).join('')||'<span class="hint">先创建 NPC，再关联到事件。</span>'}</div><p class="check-note">勾选后可设为对白说话人；取消勾选会将该人物的对白改为旁白。</p>`);
@@ -72,7 +68,7 @@
     const imageButtons=`<div class="image-actions"><button data-action="image">上传${module==='npcs'?'人物图':'卡面图'}</button><button data-action="image-clear" ${!x.image?'disabled':''}>移除图片</button></div>`;
     let html='';
     if(module==='npcs') {
-      html=`<div class="preview-label">人物预览 <span>实时</span></div><div class="portrait-frame">${x.image?`<img src="${esc(x.image)}" alt="${esc(x.name)}的人物图">`:'<span style="font-size:80px;color:#a99bfa">◉</span>'}<div class="portrait-overlay"><strong style="color:${x.color}">${esc(x.name)}</strong><small>${esc(x.role)}</small></div></div>${imageButtons}<div class="preview-section"><h3>人物标签</h3><div class="chips">${x.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean).map(s=>`<span class="chip">${esc(s)}</span>`).join('')||'<span class="hint">暂无标签</span>'}</div></div><div class="metric-grid"><div class="metric"><strong>${data.events.filter(e=>e.participants.includes(x.id)).length}</strong><small>参与事件</small></div><div class="metric"><strong>${data.cards.filter(c=>c.owner===x.id).length}</strong><small>关联卡牌</small></div></div><div class="notice">关联使用稳定 ID。修改人物姓名后，剧情和卡牌中的显示名称会同步变化。</div>`;
+      html=window.GCSNPCStudio.renderPreview(x,data);
     } else if(module==='events') {
       html=`<div class="preview-label">事件检视 <span>实时</span></div><div class="event-mini"><small>STORY / ${esc(x.id)}</small><h3>${esc(x.title)}</h3><p>${esc(x.summary)}</p><button class="primary" data-action="read">▷ 试读这段剧情</button></div><div class="metric-grid"><div class="metric"><strong>${x.dialogues.length}</strong><small>对白条数</small></div><div class="metric"><strong>${x.choices.length}</strong><small>分支选项</small></div></div><div class="preview-section"><h3>参与人物</h3>${x.participants.map(id=>jump('npcs',id,find('npcs',id).name,'编辑人物资料','◉')).join('')||'<p>暂无参与人物</p>'}</div><div class="preview-section"><h3>分支去向</h3>${x.choices.map(c=>`<div class="branch-link">${c.target?`<button class="inline-link" data-action="jump" data-group="events" data-id="${esc(c.target)}">${esc(find('events',c.target).title)}</button>`:'<span class="hint">结束剧情</span>'}</div>`).join('')||'<p>对白结束后直接结束</p>'}</div><div class="notice">试读使用当前编辑数据。不会执行奖励或游戏逻辑，可随时退出。</div>`;
     } else {
@@ -93,7 +89,23 @@
     const b=e.target.closest('button');if(!b||b.disabled)return;
     if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
-    if(a==='select'){selected=b.dataset.id;render();$('#editor').scrollTop=0;return;}
+    if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);renderEditor();renderPreview();return;}
+    if(module==='npcs' && a==='npc-go-portrait'){window.GCSNPCStudio.setTab('portrait');renderEditor();return;}
+    if(module==='npcs' && a==='npc-event-add'){
+      const id=$('#npc-event-candidate')?.value,ev=data.events.find(e=>e.id===id);
+      if(!ev || !current() || ev.participants.includes(current().id)){toast('请先选择尚未关联的演示事件');return;}
+      ev.participants.push(current().id);changed(true);toast('已关联演示事件；不会改变游戏项目');return;
+    }
+    if(module==='npcs' && a==='npc-event-remove'){
+      const ev=data.events.find(e=>e.id===b.dataset.id),npc=current();
+      if(!ev||!npc||!ev.participants.includes(npc.id))return;
+      confirmAction('移除事件关联？','这会从演示事件的参与人物中移除该 NPC，并将该人物已有对白改为旁白。不会修改游戏项目。',()=>{
+        ev.participants=ev.participants.filter(id=>id!==npc.id);
+        ev.dialogues.forEach(line=>{if(line.speaker===npc.id)line.speaker='';});
+        changed(true);toast('已移除演示事件关联');
+      });return;
+    }
+    if(a==='select'){selected=b.dataset.id;if(module==='npcs')window.GCSNPCStudio.setTab('overview');render();$('#editor').scrollTop=0;return;}
     if(a==='jump'){go(b.dataset.group,b.dataset.id);return;}
     if(a==='new'){newRecord();return;}
     if(realCards())return;
@@ -115,6 +127,14 @@
   function applyField(t) {
     if(realCards())return;
     const x=current();if(!x)return;
+    if(module==='npcs' && t.dataset.npcField){
+      const k=t.dataset.npcField;
+      let value=t.type==='checkbox'?t.checked:t.type==='number'?Number(t.value):t.value;
+      if(t.type==='number' && (t.value===''||!t.validity.valid||!Number.isInteger(value)||value<0||value>999))return;
+      if(k==='npcEnemyId' && value && !/^[a-zA-Z0-9_-]{1,100}$/.test(value))return;
+      if(k==='npcKind' && !['normal','hero'].includes(value))return;
+      x[k]=value;changed(t.tagName==='SELECT'||t.type==='checkbox');return;
+    }
     if(t.dataset.bind){const k=t.dataset.bind;if(t.type==='number'){if(!t.validity.valid||t.value==='')return;x[k]=Number(t.value);}else{x[k]=t.value;}changed(t.tagName==='SELECT');}
     if(t.dataset.line!==undefined){x.dialogues[Number(t.dataset.line)][t.dataset.lineKey]=t.value;changed();}
     if(t.dataset.choice!==undefined){x.choices[Number(t.dataset.choice)][t.dataset.choiceKey]=t.value;changed(t.tagName==='SELECT');}
@@ -123,6 +143,7 @@
   $('#editor').addEventListener('change',e=>{
     if(realCards())return;
     const t=e.target,x=current();
+    if(module==='npcs' && t.dataset.npcField && (t.tagName==='SELECT'||t.type==='checkbox')){applyField(t);return;}
     if(t.tagName==='SELECT' && t.dataset.upgrade===undefined)applyField(t);
     if(t.dataset.participant){mutate(()=>{const id=t.dataset.participant;if(t.checked)x.participants.push(id);else{x.participants=x.participants.filter(n=>n!==id);x.dialogues.forEach(l=>{if(l.speaker===id)l.speaker='';});}});}
     if(t.dataset.upgrade!==undefined){if(!t.value){mutate(()=>x.upgrades.splice(Number(t.dataset.upgrade),1));}else checkUpgrade(()=>x.upgrades[Number(t.dataset.upgrade)]=t.value);}
