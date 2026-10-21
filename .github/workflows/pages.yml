@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '22'
       - name: Test schema adapter
-        run: node --test tests/adapter.test.cjs
+        run: node --test tests/*.test.cjs
       - name: Unpack website
         run: |
           test -f site.zip || (echo "Missing site.zip"; exit 1)

@@ -8,6 +8,7 @@
   let loadMessage = '';
   try { const stored = localStorage.getItem(key); if(stored) { data = M.validate(JSON.parse(stored)); selected = data.npcs[0]?.id || ''; loadMessage = '已恢复上次的本地工作区'; } } catch { loadMessage = '本地暂存不可用或格式异常；已载入演示。请用 JSON 备份。'; }
   const meta = {npcs:['NPC 人物','CHARACTERS','人物'], events:['剧情事件','STORY EVENTS','事件'], cards:['卡牌设计','CARD LIBRARY','卡牌']};
+  const realCards = () => module==='cards' && window.GCSProject.getState().connected;
   const current = () => data[module].find(x=>x.id===selected);
   const label = x => x.name || x.title || '未命名';
   const find = (g,id) => data[g].find(x=>x.id===id);
@@ -24,17 +25,23 @@
     try { localStorage.setItem(key,JSON.stringify(data)); storageFailed=false; $('#save-state').textContent='✓ 已自动暂存 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
     catch { $('#save-state').textContent='暂存失败 · 请保存 JSON'; if(!storageFailed)toast('浏览器本地空间不足或被禁用。修改仍在当前页面，请保存 JSON。'); storageFailed=true; }
   }
-  function go(g,id) { module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
+  function go(g,id) { if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    $('#npc-count').textContent=data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=data.cards.length;
+    $('#npc-count').textContent=data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
+    $('#add-btn').hidden=realCards();
+    $('.library-foot').textContent=realCards()?'游戏项目 · 只读浏览':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
+    const connection=window.GCSProject.getState();
+    $('.project-label').textContent=connection.connected?connection.name+' / 游戏卡牌只读 · NPC / 剧情为演示内容':data.project.name+' / 演示项目';
+    if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
     const records=data[module].filter(x=>JSON.stringify(x).toLowerCase().includes(query.toLowerCase()));
     $('#list-count').textContent=records.length+' / '+data[module].length;
     $('#record-list').innerHTML=records.length?records.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${module==='npcs'&&x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:`<span class="record-symbol">${module==='events'?'☷':module==='cards'?'◇':'◉'}</span>`}<span class="record-info"><span class="record-title">${esc(label(x))}</span><span class="record-sub">${esc(module==='npcs'?x.role:module==='events'?`${x.dialogues.length} 句对白 · ${x.choices.length} 个选项`:`${x.kind} · ${x.rarity} · 费用 ${x.cost}`)}</span></span></button>`).join(''):empty(query?'没有匹配的内容':'列表为空，点击 ＋ 新建');
-    $('.project-label').innerHTML=`<span class="live-dot"></span> ${esc(data.project.name)} <span>/ 本地项目</span>`;
+    if(module==='cards')$('#library-en').textContent='DEMO / 未连接游戏项目';
   }
   function render() {
+    if(realCards()){const state=window.GCSProject.getState();if(!state.records.some(r=>r.id===selected))selected=state.records[0]?.id || '';renderList();window.GCSGameCards.render(state.records.find(r=>r.id===selected),state.branches,$('#editor'),$('#preview'));return;}
     if(!current()) selected=data[module][0]?.id || '';
     renderList(); renderEditor(); renderPreview();
   }
@@ -73,9 +80,10 @@
     }
     $('#preview').innerHTML=html;
   }
-  function changed(full=false) { persist(); renderList(); if(full)renderEditor(); else if($('#record-heading'))$('#record-heading').textContent=label(current()); renderPreview(); }
+  function changed(full=false) { persist(); if(realCards()){render();return;} renderList(); if(full)renderEditor(); else if($('#record-heading'))$('#record-heading').textContent=label(current()); renderPreview(); }
   function mutate(callback) { callback(); changed(true); }
   function newRecord() {
+    if(realCards())return;
     const id=module.slice(0,-1)+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);
     const x=module==='npcs'?{id,name:'新人物',role:'待设定',tags:'',bio:'',image:'',color:'#9aacf0'}:module==='events'?{id,title:'新事件',summary:'',participants:[],dialogues:[],choices:[]}:{id,name:'新卡牌',kind:'技能',rarity:'普通',cost:1,power:0,description:'',owner:'',source:'',upgrades:[],image:'',color:'#9aacf0'};
     data[module].push(x);selected=id;query='';$('#search').value='';persist();render();toast('已新建'+meta[module][2]);
@@ -83,11 +91,12 @@
   function checkUpgrade(callback) { const before=M.clone(current().upgrades); callback(); try{M.validate(data);changed(true);}catch(e){current().upgrades=before;renderEditor();toast(e.message);} }
   document.addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b||b.disabled)return;
-    if(b.dataset.module){go(b.dataset.module,data[b.dataset.module][0]?.id||'');return;}
+    if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
     if(a==='select'){selected=b.dataset.id;render();$('#editor').scrollTop=0;return;}
     if(a==='jump'){go(b.dataset.group,b.dataset.id);return;}
     if(a==='new'){newRecord();return;}
+    if(realCards())return;
     if(!a||!x)return;
     if(a==='duplicate'){const copy=M.clone(x);copy.id=module.slice(0,-1)+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);copy[module==='events'?'title':'name']+=' · 副本';data[module].push(copy);selected=copy.id;query='';$('#search').value='';persist();render();toast('已复制，可独立编辑');}
     if(a==='delete'){const g=module,id=x.id;confirmAction('删除“'+label(x)+'”？','删除后会清除其他内容对它的关联。若删除人物，对白保留并改为旁白；若删除事件，指向它的分支改为结束。此操作不能撤销，建议先保存 JSON。',()=>{M.remove(data,g,id);selected='';persist();render();toast('已删除并清理关联');});}
@@ -104,6 +113,7 @@
     if(a==='read'){readState={event:x.id,index:0};renderReader();$('#reader').showModal();}
   });
   function applyField(t) {
+    if(realCards())return;
     const x=current();if(!x)return;
     if(t.dataset.bind){const k=t.dataset.bind;if(t.type==='number'){if(!t.validity.valid||t.value==='')return;x[k]=Number(t.value);}else{x[k]=t.value;}changed(t.tagName==='SELECT');}
     if(t.dataset.line!==undefined){x.dialogues[Number(t.dataset.line)][t.dataset.lineKey]=t.value;changed();}
@@ -111,12 +121,14 @@
   }
   $('#editor').addEventListener('input',e=>{if(e.target.tagName!=='SELECT'&&e.target.type!=='checkbox')applyField(e.target);});
   $('#editor').addEventListener('change',e=>{
+    if(realCards())return;
     const t=e.target,x=current();
     if(t.tagName==='SELECT' && t.dataset.upgrade===undefined)applyField(t);
     if(t.dataset.participant){mutate(()=>{const id=t.dataset.participant;if(t.checked)x.participants.push(id);else{x.participants=x.participants.filter(n=>n!==id);x.dialogues.forEach(l=>{if(l.speaker===id)l.speaker='';});}});}
     if(t.dataset.upgrade!==undefined){if(!t.value){mutate(()=>x.upgrades.splice(Number(t.dataset.upgrade),1));}else checkUpgrade(()=>x.upgrades[Number(t.dataset.upgrade)]=t.value);}
   });
   $('#editor').addEventListener('focusout',e=>{
+    if(realCards())return;
     const t=e.target;
     if(t.dataset.bind==='name'||t.dataset.bind==='title'){if(!t.value.trim()){t.value='未命名'+meta[module][2];applyField(t);toast('名称不能为空，已设为“'+t.value+'”');}}
     if(t.type==='number'&&(!t.validity.valid||t.value==='')){t.value=current()[t.dataset.bind];toast('请输入 0～999 的整数；已保留上次有效数值。');}
@@ -161,5 +173,6 @@
     renderReader();
   });
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();if(!$('dialog[open]'))$('#export-btn').click();}});
+  window.addEventListener('gcs-project-change',()=>render());
   render();$('#save-state').textContent=loadMessage.includes('不可用')?'暂存异常 · 请保存 JSON':loadMessage?'✓ 已恢复本地暂存':'演示项目 · 修改自动暂存';if(loadMessage)toast(loadMessage);
 })();

@@ -90,7 +90,8 @@
     if (data.retain) parts.push('保留');
     return parts.join('；') || '没有可概括的固定效果，请查看原始字段。';
   }
-  const api = {readRecords,readBranches,preview,describe,labels,cardName:r=>r.value.name || r.id};
+  const projectFiles = {cards:"data/cards/basic_cards.json",branches:"data/cards/special_upgrade_branches.json"};
+  const api = {projectFiles,readRecords,readBranches,preview,describe,labels,cardName:r=>r.value.name || r.id};
   root.GCSNingguAdapter = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
