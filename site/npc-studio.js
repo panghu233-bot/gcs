@@ -8,7 +8,7 @@
   function btn(action,title){return '<button data-action="'+action+'" class="npc-link">'+E(title)+' →</button>';}
   function field(label,key,val,type='text',max=300){return '<label class="field">'+E(label)+'<input data-npc-field="'+E(key)+'" type="'+type+'" '+(type==='number'?'min="0" max="999" step="1"':'maxlength="'+max+'"')+' value="'+E(val==null?'':val)+'"></label>';}
   function box(title,body){return '<section class="npc-panel"><h3>'+E(title)+'</h3>'+body+'</section>';}
-  function card(type,title,desc,action){return '<div class="npc-action"><span class="npc-action-icon">'+type+'</span><div><strong>'+E(title)+'</strong><small>'+E(desc)+'</small></div>'+btn('npc-tab',action)+'</div>';}
+  function card(type,title,desc,target){return '<div class="npc-action"><span class="npc-action-icon">'+type+'</span><div><strong>'+E(title)+'</strong><small>'+E(desc)+'</small></div><button data-action="npc-tab" data-tab="'+target+'" class="npc-link">打开 →</button></div>';}
   function portrait(n){return '<div class="npc-portrait-view">'+(n.image?'<img src="'+E(n.image)+'" alt="'+E(n.name)+'立绘">':'<div class="npc-empty-portrait">◉<small>暂无人物图片</small></div>')+'</div>';}
   function eventList(n,data,allowEdit){
     const linked=data.events.filter(ev=>ev.participants.includes(n.id));
@@ -21,15 +21,15 @@
     return '<div class="npc-two-col">'+
       box('人物形象',portrait(n)+'<div class="npc-inline-actions">'+btn('npc-go-portrait','编辑资料和立绘')+'</div>')+
       box('在游戏中如何使用','<p class="npc-muted">以下关联来自当前 GCS 演示工作区，非已连接游戏的真实 NPC 数据。</p>'+
-        card('☷','参与养成事件',events.length+' 个演示事件关联','查看')+
-        card('♥','英雄专属互动',kind(n)==='hero'?'送礼、好感、祝福、偶遇':'普通 NPC 不使用英雄好感','配置')+
-        card('⚔','战斗身份',n.npcEnemyId?'已关联演示敌人 '+n.npcEnemyId:'暂未关联','绑定')+
+        card('☷','参与养成事件',events.length+' 个演示事件关联','appear')+
+        card('♥','英雄专属互动',kind(n)==='hero'?'送礼、好感、祝福、偶遇':'普通 NPC 不使用英雄好感','mechanics')+
+        card('⚔','战斗身份',n.npcEnemyId?'已关联演示敌人 '+n.npcEnemyId:'暂未关联','combat')+
         '<div class="npc-hint-box">点击上方功能标签可以配置。这里保存的是演示内容，不会改变游戏运行机制。</div>')+
       '</div>';
   }
   function appearance(n){
     return '<div class="npc-two-col">'+box('立绘与头像',portrait(n)+'<div class="npc-inline-actions"><button data-action="image">上传人物图片</button><button data-action="image-clear" '+(!n.image?'disabled':'')+'>移除图片</button></div><p class="npc-muted">图片保存到演示 JSON；不会替换游戏文件。</p>')+
-      box('人物资料','<div class="form-grid">'+field('人物姓名','name',n.name)+field('身份 / 定位','role',n.role)+'</div>'+field('人物类型','npcKind',kind(n),'select')+
+      box('人物资料','<div class="form-grid">'+field('人物姓名','name',n.name)+field('身份 / 定位','role',n.role)+'</div>'+'<label class="field">人物类型<select data-npc-field="npcKind"><option value="normal" '+(kind(n)==='normal'?'selected':'')+'>普通 NPC</option><option value="hero" '+(kind(n)==='hero'?'selected':'')+'>英雄（专属玩法）</option></select></label>'+
         field('标签','tags',n.tags)+
         '<label class="field">创作备注<textarea data-npc-field="bio" maxlength="20000">'+E(n.bio)+'</textarea></label>'+
         '<label class="field">主题色<input data-npc-field="color" type="color" value="'+E(n.color)+'"></label>'+
