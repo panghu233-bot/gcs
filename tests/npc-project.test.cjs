@@ -17,7 +17,7 @@ test('NPC identities and references are derived from dedicated source files, not
  assert.equal(first.enemy.id,'opponent_one');
  assert.equal(first.enemy.max_hp,34);
  assert.equal(first.portraitRef,'res://assets/cultivation/portraits/npc/alpha.png');
- assert.equal(records.find(n=>n.name==='丙丁').npcKind,'unverified');
+ assert.equal(records.find(n=>n.name==='丙丁').npcKind,'normal');
  assert.ok(records.every(n=>n.sources.includes(reader.paths.visuals)));
 });
 test('non-ASCII image path still belongs to an actual mapped person',()=>{
@@ -37,6 +37,6 @@ test('folder fallback reads only targeted files and never invents a missing NPC'
  await assert.rejects(reader.fromFileList(files.filter(x=>x.name!=='cultivation_scene_visuals.gd')),/缺少/);
 });
 test('no fabricated character fallback when source mapping is empty',()=>{
- const s=sources();s.visuals='const MAP = {}';s.data='';
+ const s=sources();s.visuals='const MAP = {}';s.data='';s.story='';s.commission='';
  assert.deepEqual(reader.indexFromSources(s),[]);
 });

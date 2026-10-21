@@ -1,7 +1,7 @@
 {
   "name": "gcs-static-workspace",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.3",
   "scripts": {"test":"node --test tests/*.test.cjs", "vendor:jsonc":"node tools/build-jsonc.cjs"},
   "devDependencies": {"jsonc-parser":"3.3.1", "esbuild":"0.28.2"}
 }

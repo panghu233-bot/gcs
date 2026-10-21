@@ -40,7 +40,7 @@
     if(realNPCs()){
       const all=npcRecords(),hits=all.filter(x=>(x.name+' '+x.portraitRef+' '+x.sources.join(' ')).toLowerCase().includes(query.toLowerCase()));
       $('#library-en').textContent='GAME / 只读';$('#list-count').textContent=hits.length+' / '+all.length;
-      $('#record-list').innerHTML=hits.length?hits.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:'<span class="record-symbol">◉</span>'}<span class="record-info"><span class="record-title">${esc(x.name)}</span><span class="record-sub">${esc(x.npcKind==='hero'?'英雄 · 本地来源':'养成人物 · 本地来源')}</span></span></button>`).join(''):empty(connection.npcError?'NPC 识别失败，请查看中间的错误说明':query?'没有匹配的人物':'没有找到可验证的 NPC 人物');
+      $('#record-list').innerHTML=hits.length?hits.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:'<span class="record-symbol">◉</span>'}<span class="record-info"><span class="record-title">${esc(x.name)}</span><span class="record-sub">${esc(x.role||'身份未核实 · 本地来源')}</span></span></button>`).join(''):empty(connection.npcError?'NPC 识别失败，请查看中间的错误说明':query?'没有匹配的人物':'没有找到可验证的 NPC 人物');
       return;
     }
     const records=data[module].filter(x=>JSON.stringify(x).toLowerCase().includes(query.toLowerCase()));

@@ -46,3 +46,13 @@ test('refresh reads the files again instead of relying on cached JSON',async()=>
  h.getFileHandle=async name=>({getFile:async()=>name==='catalog.json'?file({records:[{id:'fresh',value:{cost:7}}]}):file({groups:{fresh:[]}})});
  await project.refresh();assert.equal(project.getState().records[0].id,'fresh');assert.equal(project.getState().records[0].value.cost,7);
 });
+
+test('NPC read failures stay isolated from cards and refresh releases stale portraits',async()=>{
+ let failNpc=false,releases=0;
+ const npcReader={async fromHandle(){if(failNpc)throw Error('source unavailable');return {records:[{id:'local-npc'}],release(){releases++;}};}};
+ const p=createProject({adapter,store:{load:async()=>null,save:async()=>{}},npcReader}),h=handle();
+ await p.open(async()=>h);assert.equal(p.getState().npcRecords[0].id,'local-npc');assert.equal(p.getState().records[0].id,'example');
+ await p.refresh();assert.equal(releases,1);
+ failNpc=true;await p.refresh();assert.equal(releases,2);assert.equal(p.getState().connected,true);assert.equal(p.getState().records[0].id,'example');assert.deepEqual(p.getState().npcRecords,[]);assert.match(p.getState().npcError,/source unavailable/);
+ failNpc=false;await p.refresh();await p.disconnect();assert.equal(releases,3);assert.equal(p.getState().npcRecords,null);
+});

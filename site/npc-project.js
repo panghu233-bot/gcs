@@ -1,127 +1,176 @@
-/* Read-only cultivation NPC adapter. Source files and image bytes remain in the local browser. */
+/* Read-only cultivation NPC adapter. Private sources and image bytes stay in the browser. */
 (function(root){
 'use strict';
-const paths={visuals:'scripts/cultivation/ui/cultivation_scene_visuals.gd',data:'scripts/cultivation/cultivation_data.gd',story:'scripts/cultivation/cultivation_story_events.gd',commission:'scripts/cultivation/teahouse_commission_dialogue.gd',enemies:'data/enemies/basic_enemies.json'};
-const han=s=>/[\u3400-\u9fff]/u.test(s)&&s.length>=2&&s.length<=24;
-const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]/gu,'');
-const escapeRegex=s=>s.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&');
-function objectAt(text,start){
- const begin=text.indexOf('{',start);if(begin<0)return '';
- let depth=0,quote='',slash=false,comment=false;
- for(let i=begin;i<text.length;i++){
-  const c=text[i];
-  if(comment){if(c==='\n')comment=false;continue;}
-  if(quote){if(slash)slash=false;else if(c==='\\')slash=true;else if(c===quote)quote='';continue;}
-  if(c==='#'){comment=true;continue;}
-  if(c==='"'||c==="'"){quote=c;continue;}
-  if(c==='{')depth++;
-  if(c==='}'&&!--depth)return text.slice(begin,i+1);
+const paths={visuals:'scripts/cultivation/ui/cultivation_scene_visuals.gd',data:'scripts/cultivation/cultivation_data.gd',manager:'scripts/cultivation/cultivation_manager.gd',story:'scripts/cultivation/cultivation_story_events.gd',commission:'scripts/cultivation/teahouse_commission_dialogue.gd',enemies:'data/enemies/basic_enemies.json'};
+const isName=s=>typeof s==='string'&&/[\u3400-\u9fff]/u.test(s)&&s.length<=24&&s.trim()===s;
+const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+// Small literal reader, never eval: comments, StringNames, nested dictionaries and arrays.
+function tokens(text){
+ const out=[],re=/#[^\r\n]*|&?("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|-?\d+(?:\.\d+)?|[A-Za-z_][\w]*|[^\s]/g;let m;
+ while((m=re.exec(text))){if(m[0][0]==='#')continue;const raw=m[0];let value=raw,type='symbol';
+  if(m[1]){type='string';value=m[1].slice(1,-1).replace(/\\([nrt\\"'])/g,(_,c)=>({n:'\n',r:'\r',t:'\t'}[c]??c));}
+  else if(/^-?\d/.test(raw)){type='number';value=Number(raw);}
+  out.push({raw,value,type,pos:m.index});
+ }return out;
+}
+function valueAt(ts,start){
+ const t=ts[start];if(!t)return {end:start,value:undefined};
+ if(t.type==='string'||t.type==='number')return {end:start+1,value:t.value};
+ if(['true','false','null'].includes(t.raw))return {end:start+1,value:{true:true,false:false,null:null}[t.raw]};
+ if(t.raw!=='{'&&t.raw!=='[')return {end:start+1,value:undefined};
+ const object=t.raw==='{',close=object?'}':']',value=object?Object.create(null):[];let i=start+1;
+ while(i<ts.length&&ts[i].raw!==close){
+  if(ts[i].raw===','){i++;continue;}
+  let key;
+  if(object){key=ts[i++];if(ts[i]?.raw!==':')return {end:i,value:undefined};i++;}
+  const item=valueAt(ts,i);i=item.end;
+  // Expressions are not literal values. Skip to the next same-level separator.
+  let literal=true,depth=0;
+  while(i<ts.length&&(depth||![',',close].includes(ts[i].raw))){literal=false;const r=ts[i++].raw;if(['{','[','('].includes(r))depth++;if(['}',']',')'].includes(r))depth--;}
+  if(literal&&item.value!==undefined){if(object&&key.type==='string'&&key.value!=='__proto__')value[key.value]=item.value;else if(!object)value.push(item.value);}
  }
- return '';
+ return {end:i+1,value:i<ts.length?value:undefined};
+}
+function literalConstants(text){
+ const ts=tokens(text),out=Object.create(null);
+ for(let i=0;i<ts.length;i++)if(ts[i].raw==='const'&&/^\w+$/.test(ts[i+1]?.raw||'')){
+  const name=ts[i+1].raw;let j=i+2;while(j<ts.length&&ts[j].raw!=='='&&ts[j].raw!=='const'&&ts[j].raw!=='func')j++;
+  if(ts[j]?.raw==='='){const parsed=valueAt(ts,j+1);if(parsed.value!==undefined)out[name]=parsed.value;}
+ }return out;
+}
+function functionBlocks(text){
+ const lines=text.split('\n'),out=[];let offset=0,classes=[];
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],indent=line.match(/^\s*/)[0].length,cl=line.match(/^\s*class\s+(\w+)/),fn=line.match(/^\s*(?:static\s+)?func\s+(\w+)\s*\(/);
+  if(cl){classes=classes.filter(c=>c.indent<indent);classes.push({indent,name:cl[1]});}
+  if(fn){let end=i,depth=0;do{for(const t of tokens(lines[end])){if(t.raw==='(')depth++;if(t.raw===')')depth--;}end++;}while(end<lines.length&&depth>0);while(end<lines.length){const l=lines[end];if(l.trim()&&!/^\s*#/.test(l)&&l.match(/^\s*/)[0].length<=indent)break;end++;}
+   const owner=classes.filter(c=>c.indent<indent).map(c=>c.name).join('.');
+   out.push({name:fn[1],qualified:owner?owner+'.'+fn[1]:fn[1],line:i+1,pos:offset,code:lines.slice(i,end).join('\n').trimEnd()});
+  }offset+=line.length+1;
+ }return out;
+}
+function dictionaries(text){const ts=tokens(text),out=[];for(let i=0;i<ts.length;i++)if(ts[i].raw==='{'){const p=valueAt(ts,i);if(p.value&&!Array.isArray(p.value))out.push({value:p.value,pos:ts[i].pos});}return out;}
+function assignment(code,field){const ts=tokens(code);for(let i=0;i<ts.length-3;i++)if(ts[i].raw==='.'&&ts[i+1].raw===field&&ts[i+2].raw==='=')return valueAt(ts,i+3).value;return undefined;}
+function dialogueBranches(fn){
+ if(fn?.name!=='get_dialogue_lines')return [];
+ const lines=fn.code.split('\n'),out=[];let matchIndent=-1,offset=0;
+ for(let i=0;i<lines.length;i++){
+  const l=lines[i],indent=l.match(/^\s*/)[0].length;
+  if(/^\s*match\s+\w+\s*:/.test(l))matchIndent=indent;
+  const m=l.match(/^\s*(\w+)\s*:\s*$/);
+  if(matchIndent>=0&&indent>matchIndent&&m&&(!out.length||indent===out[0].indent))out.push({label:m[1],pos:offset,line:fn.line+i,indent});
+  offset+=l.length+1;
+ }
+ return out;
+}
+function dialogueEvents(text,source){
+ const blocks=functionBlocks(text),groups=new Map();
+ for(const entry of dictionaries(text)){
+  const d=entry.value,participants=['speaker','left','right'].map(k=>d[k]).filter(isName);
+  if(!participants.length&&!(typeof d.text==='string'&&['speaker','left','right'].some(k=>own(d,k))))continue;
+  const fn=blocks.find(f=>entry.pos>=f.pos&&entry.pos<f.pos+f.code.length);
+  const branch=dialogueBranches(fn).filter(b=>entry.pos>=fn.pos+b.pos).at(-1);
+  const id=(fn?.qualified||'literal_dialogue')+(branch?' ['+branch.label+']':'');let event=groups.get(id);
+  if(!event){event={source,function:id,line:branch?.line||fn?.line||1,eventId:fn?assignment(fn.code,'event_id')||'':'',title:fn?assignment(fn.code,'title')||'':'',dialogues:[],references:[]};groups.set(id,event);}
+  event.references.push(...participants);
+  if(typeof d.text==='string')event.dialogues.push(Object.fromEntries(['speaker','text','left','right','mood','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
+ }
+ return Array.from(groups.values());
+}
+function safeResource(ref){
+ const path=String(ref||'').replace(/^res:\/\//,'');
+ return path.startsWith('assets/')&&!/[\\\x00-\x1f:]/.test(path)&&!path.split('/').some(p=>!p||p==='.'||p==='..')&&/\.(png|jpe?g|webp)$/i.test(path)?path:'';
+}
+// Recognize only literal expressions used by the cultivation manager. Unknown shapes stay blank.
+function heroRuntime(id,config,constants,rules){
+ const gift=rules.find(f=>f.name==='give_gift'),pool=rules.find(f=>f.name==='_build_teahouse_npc_encounter_pool');
+ const out={};
+ if(gift){
+  const ts=tokens(gift.code);
+  for(let i=0;i<ts.length-4;i++)if(ts[i].raw==='get'&&ts[i+1].raw==='('&&ts[i+2].value==='affection_from_gift'&&ts[i+3].raw===','&&ts[i+4].type==='number')out.giftFallback=ts[i+4].value;
+  out.giftGain=typeof config.affection_from_gift==='number'?config.affection_from_gift:out.giftFallback;
+  out.preferredGiftRead=ts.some(t=>t.type==='string'&&t.value==='preferred_gift');
+  const cost=gift.code.match(/consume_item\(gift_id,\s*(\d+)\)/);if(cost)out.giftCost=Number(cost[1]);
+ }
+ if(pool){
+  const range=pool.code.match(/if\s+day\s*<\s*(\d+)\s+or\s+day\s*>\s*(\d+)\s*:\s*return\s*\[\]/);
+  if(range){out.dayStart=Number(range[1]);out.dayEnd=Number(range[2]);}
+  const lines=pool.code.split('\n');let condition=[],indent=-1;
+  for(const line of lines){
+   if(/^\s*if\s/.test(line)){condition=[line.trim()];indent=line.match(/^\s*/)[0].length;}
+   else if(condition.length&&!condition.at(-1).endsWith(':'))condition.push(line.trim());
+   const append=line.match(/pool\.append\(CultivationData\.TeahouseNpcEncounter\.(\w+)\)/);
+   if(append&&constants[append[1]]===id&&line.match(/^\s*/)[0].length>indent)out.encounterCondition=condition.join(' ');
+  }
+ }
+ return out;
 }
 function indexFromSources(sources){
- const visual=sources.visuals||'',data=sources.data||'';
+ const visual=sources.visuals||'',data=sources.data||'',manager=sources.manager||'';
  if(!visual.trim())throw Error('缺少养成立绘映射：'+paths.visuals);
- const people=new Map();
- function add(name,portrait,source,hero){
-  if(!han(name))return;
-  const id='cultivation:'+name,existing=people.get(id);
-  if(existing){
-   if(!existing.portraitRef&&portrait)existing.portraitRef=portrait;
-   if(hero){existing.npcKind='hero';existing.role='英雄';}
-   if(!existing.sources.includes(source))existing.sources.push(source);
-  }else people.set(id,{id,name,role:hero?'英雄':'养成 NPC',npcKind:hero?'hero':'unverified',portraitRef:portrait||'',image:'',sources:[source],events:[],enemy:null});
+ const vc=literalConstants(visual),dc=literalConstants(data),mc=literalConstants(manager),people=new Map();
+ function add(name,ref,source){
+  if(!isName(name))return null;let p=people.get(name);
+  if(!p){p={id:'cultivation:'+name,name,role:'立绘映射键 · 出场未核实',npcKind:'unverified',portraitRef:'',image:'',sources:[],events:[],enemies:[],enemy:null,hero:null};people.set(name,p);}
+  if(ref&&!p.portraitRef)p.portraitRef=ref;if(!p.sources.includes(source))p.sources.push(source);return p;
  }
- // Exact speaker-name keys from the dedicated cultivation visual source only.
- const direct=/["']([^"'\\\r\n]{2,30})["']\s*:\s*(?:["']([^"'\\\r\n]+)["']|(?:preload|load)\(\s*["']([^"'\\\r\n]+)["']\s*\)|\{)/g;
- let m;
- while((m=direct.exec(visual))){
-  if(!han(m[1]))continue;
-  const literal=m[2]||m[3]||'';
-  if(literal&&(/^[\u3400-\u9fff]{2,24}$/u.test(literal)||/^(?:true|false|null|\d+)$/i.test(literal)))continue;
-  const trailing=visual.slice(m.index,m.index+260);
-  const embedded=trailing.match(/(?:res:\/\/|assets\/)[^"'\s,)]+\.(?:png|jpe?g|webp)|["']([a-z][\w./-]*\.(?:png|jpe?g|webp))["']/i);
-  const ref=literal||embedded?.[0]?.replace(/^["']|["']$/g,'')||'';
-  if(ref)add(m[1],ref,paths.visuals,false);
- }
- // Also accept literal Godot match branches.
- const branches=/^\s*["']([^"'\\\r\n]{2,30})["']\s*:\s*(?:return\s+)?(?:preload|load)?\s*\(?\s*["']([^"'\\\r\n]+)["']/gm;
- while((m=branches.exec(visual)))if(han(m[1])&&!han(m[2]))add(m[1],m[2],paths.visuals,false);
- // Hero status needs a source-backed match: never infer it from teahouse encounters.
- const pos=data.search(/\bHERO_AFFINITY_CONFIG\b\s*(?::[^=\n]+)?(?:=|:=)\s*\{/);
- const config=pos<0?'':objectAt(data,pos);
- if(config){
-  const entries=/"([^"\r\n]+)"\s*:\s*\{/g;let e;
-  while((e=entries.exec(config))){
-   const inner=objectAt(config,e.index);
-   const explicit=inner.match(/["'](?:name|display_name|npc_name|character_name)["']\s*:\s*["']([\u3400-\u9fff][^"'\\\r\n]{0,20})["']/);
-   if(explicit)add(explicit[1],'',paths.data,true);
-   else{
-    const found=Array.from(people.values()).find(p=>[p.name,p.portraitRef].some(v=>norm(v)===norm(e[1])));
-    if(found)add(found.name,'',paths.data,true);
-   }
+ const folders=vc.SPEAKER_PORTRAIT_MAP,filenames=vc.SPEAKER_FILENAME_MAP,base=vc.PORTRAIT_BASE_PATH;
+ if(folders||filenames){
+  for(const name of new Set([...Object.keys(folders||{}),...Object.keys(filenames||{})])){
+   const folder=folders?.[name]||'npc',file=filenames?.[name]||'normal';
+   add(name,typeof base==='string'&&typeof folder==='string'&&typeof file==='string'?base+folder+'/'+file+'.png':'',paths.visuals);
   }
+ }else{
+  // Legacy adapters with complete, explicit resource maps remain supported.
+  for(const d of dictionaries(visual))for(const [name,ref] of Object.entries(d.value))if(typeof ref==='string'&&safeResource(ref))add(name,ref,paths.visuals);
+ }
+ const events=[];
+ for(const key of ['data','story','commission'])for(const ev of dialogueEvents(sources[key]||'',paths[key])){
+  events.push(ev);for(const name of new Set(ev.references))add(name,'',paths[key]);
+ }
+ // Hero IDs join only through explicit configuration or literal display-name branches.
+ const display=new Map(),blocks=functionBlocks(data);
+ for(const fn of blocks.filter(f=>f.name==='get_display_name')){
+  const ts=tokens(fn.code);for(let i=0;i<ts.length-3;i++)if(ts[i+1].raw===':'&&ts[i+2].raw==='return'&&ts[i+3].type==='string'){
+   const id=dc[ts[i].raw]??(ts[i].type==='string'?ts[i].value:undefined);if(typeof id==='string')display.set(id,ts[i+3].value);
+  }
+ }
+ const managerFunctions=functionBlocks(manager);
+ for(const [id,config] of Object.entries(dc.HERO_AFFINITY_CONFIG||{})){
+  if(!config||typeof config!=='object'||Array.isArray(config))continue;
+  const explicit=['name','display_name','npc_name','character_name'].map(k=>config[k]).find(isName)||display.get(id);
+  const p=explicit?add(explicit,'',paths.data):isName(id)?add(id,'',paths.data):null;if(!p)continue;
+  const rules=managerFunctions.filter(f=>['give_gift','_build_teahouse_npc_encounter_pool','try_teahouse_npc_encounter_on_entry','complete_teahouse_npc_encounter','_try_trigger_affection_blessing','sync_blessings_to_deck'].includes(f.name));
+  p.npcKind='hero';p.role='英雄 · HERO_AFFINITY_CONFIG';p.hero={id,config,constants:Object.fromEntries(Object.entries(mc).filter(([k,v])=>k.startsWith('TEAHOUSE_AFFECTION_')&&typeof v==='number')),encounterChance:dc.TEAHOUSE_NPC_ENCOUNTER_CHANCE,runtime:heroRuntime(id,config,dc,rules),rules:rules.map(f=>({...f,source:paths.manager}))};
+  if(rules.length)p.sources.push(paths.manager);
  }
  let enemyJson;try{enemyJson=JSON.parse(sources.enemies||'{"enemies":[]}');}catch{throw Error('敌人 JSON 解析失败：'+paths.enemies);}
  if(!Array.isArray(enemyJson.enemies))throw Error('敌人 JSON 缺少 enemies 数组');
  for(const p of people.values()){
-  for(const key of ['data','story','commission']){
-   const src=sources[key]||'';
-   const expr=new RegExp('(?:["\\x27]?(?:speaker|left|right)["\\x27]?)\\s*:\\s*["\\x27]'+escapeRegex(p.name)+'["\\x27]','g');
-   const count=Array.from(src.matchAll(expr)).length;
-   if(count)p.events.push({source:paths[key],count});
-  }
-  const matches=enemyJson.enemies.filter(e=>e&&e.name===p.name&&typeof e.id==='string');
-  if(matches.length===1)p.enemy={id:matches[0].id,max_hp:matches[0].max_hp,source:paths.enemies};
+  for(const ev of events){const count=ev.references.filter(name=>name===p.name).length;if(count)p.events.push({...ev,count});}
+  if(p.npcKind!=='hero'&&p.events.length){p.npcKind='normal';p.role='养成对白参与者';}
+  p.enemies=enemyJson.enemies.filter(e=>e&&e.name===p.name&&typeof e.id==='string').map(e=>({id:e.id,name:e.name,max_hp:e.max_hp,source:paths.enemies}));p.enemy=p.enemies[0]||null;
+  if(p.enemies.length&&!p.sources.includes(paths.enemies))p.sources.push(paths.enemies);
  }
  return Array.from(people.values()).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
 }
 async function load(read,makeUrl){
- const source={};
- for(const key of ['visuals','data','story','commission','enemies']){
-  const f=await read(paths[key]);
-  if(!f){if(key==='visuals'||key==='enemies')throw Error('项目中缺少 '+paths[key]);source[key]='';continue;}
-  if(f.size>4*1024*1024)throw Error('NPC 来源文件超过 4 MB：'+paths[key]);
-  source[key]=await f.text();
+ const source={};for(const [key,path] of Object.entries(paths)){
+  const f=await read(path);if(!f){if(key==='visuals'||key==='enemies')throw Error('项目中缺少 '+path);source[key]='';continue;}
+  if(f.size>4*1024*1024)throw Error('NPC 来源文件超过 4 MB：'+path);source[key]=await f.text();
  }
- const records=indexFromSources(source);
- if(!records.length)throw Error('没有在养成立绘映射中识别到人物；已停止加载，不使用演示数据代替');
+ const records=indexFromSources(source);if(!records.length)throw Error('没有识别到可验证的养成人物；不使用演示数据代替');
  const urls=[];
- for(const person of records){
-  const ref=person.portraitRef;if(!ref)continue;
-  const candidates=[];
-  if(ref.startsWith('res://'))candidates.push(ref.slice(6));
-  else if(ref.startsWith('assets/'))candidates.push(ref);
-  else if(/^[\w./-]+$/.test(ref)&&!ref.includes('..')){
-   for(const root of ['assets/cultivation/portraits/npc/新版','assets/cultivation/portraits/npc','assets/cultivation/portraits']){
-    if(/\.(?:png|jpe?g|webp)$/i.test(ref))candidates.push(root+'/'+ref);
-    else candidates.push(root+'/'+ref+'.png',root+'/'+ref+'.webp');
-   }
-  }
-  for(const candidate of new Set(candidates)){
-   if(candidate.includes('..')||!/\.(?:png|jpe?g|webp)$/i.test(candidate))continue;
-   const f=await read(candidate);
-   if(f&&f.size<=8*1024*1024&&makeUrl){
-    const url=makeUrl(f);person.image=url;person.portraitPath=candidate;urls.push(url);break;
-   }
-  }
- }
- return {records,release:()=>{if(typeof URL!=='undefined')for(const u of urls)URL.revokeObjectURL(u);}};
+ const release=()=>{for(const url of urls.splice(0))URL.revokeObjectURL(url);};
+ try{for(const p of records){const path=safeResource(p.portraitRef);if(!path)continue;const f=await read(path);
+  if(f&&f.size<=8*1024*1024&&makeUrl){p.image=makeUrl(f);p.portraitPath=path;urls.push(p.image);}
+ }return {records,release};}catch(e){release();throw e;}
 }
-function fromHandle(handle){
- return load(async path=>{
-  const parts=path.split('/');let dir=handle;
-  try{for(const p of parts.slice(0,-1))dir=await dir.getDirectoryHandle(p,{create:false});
-   return await (await dir.getFileHandle(parts.at(-1),{create:false})).getFile();
-  }catch(e){if(e.name==='NotFoundError')return null;throw e;}
- },f=>URL.createObjectURL(f));
-}
-function fromFileList(fileList){
- const files=new Map();
- for(const f of fileList){const relative=f.webkitRelativePath.split('/').slice(1).join('/');if(relative)files.set(relative,f);}
- return load(async path=>files.get(path)||null,f=>URL.createObjectURL(f));
-}
-const api={paths,indexFromSources,fromHandle,fromFileList};
-if(typeof module!=='undefined')module.exports=api;
-root.GCSNPCProject=api;
+function fromHandle(handle){return load(async path=>{
+ const parts=path.split('/');let dir=handle;
+ try{for(const p of parts.slice(0,-1))dir=await dir.getDirectoryHandle(p,{create:false});return await (await dir.getFileHandle(parts.at(-1),{create:false})).getFile();}
+ catch(e){if(e.name==='NotFoundError')return null;throw e;}
+},f=>URL.createObjectURL(f));}
+function fromFileList(fileList){const files=new Map();for(const f of fileList){const relative=f.webkitRelativePath.split('/').slice(1).join('/');if(relative)files.set(relative,f);}return load(async path=>files.get(path)||null,f=>URL.createObjectURL(f));}
+const api={paths,indexFromSources,fromHandle,fromFileList};if(typeof module!=='undefined')module.exports=api;root.GCSNPCProject=api;
 })(typeof window!=='undefined'?window:globalThis);
