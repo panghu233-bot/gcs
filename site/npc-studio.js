@@ -81,10 +81,24 @@
   // Real-project rendering never consults the demo workspace.
   function actualSources(n){return (n.sources||[]).map(s=>'<p class="npc-muted">'+E(s)+' · 本地只读</p>').join('');}
   function info(label,value){return '<p class="npc-muted"><strong>'+E(label)+'：</strong>'+E(value===undefined||value===null||value===''?'—':value)+'</p>';}
-  function actualPortrait(n){return portrait(n)+info('源码立绘引用',n.portraitRef)+info('已加载文件',n.portraitPath)+(n.portraitRef&&!n.image?'<p class="npc-muted">源码引用的文件不存在或无法读取。保留空白，请核对游戏中的映射；未按相似文件名替换。</p>':'');}
+  const portraitSelection=new WeakMap();
+  function loadedPortraits(n){return (n.portraits||[]).filter(p=>p.image);}
+  function selectedPortrait(n){const list=loadedPortraits(n),ref=portraitSelection.get(n);return list.find(p=>p.ref===ref)||list.find(p=>p.ref===n.portraitRef)||list[0]||{ref:n.portraitRef,image:n.image,path:n.portraitPath};}
+  function selectRealPortrait(n,index){const p=loadedPortraits(n)[index];if(p)portraitSelection.set(n,p.ref);}
+  function actualPortrait(n){
+    const p=selectedPortrait(n),list=loadedPortraits(n);
+    const thumbnails=list.length>1?'<div class="npc-portrait-thumbnails" role="group" aria-label="切换本地人物立绘">'+list.map((v,i)=>'<button type="button" data-action="npc-portrait-select" data-index="'+i+'" aria-pressed="'+(v.ref===p.ref)+'" title="'+E(v.label+' · '+v.ref)+'"><img src="'+E(v.image)+'" alt="'+E(v.label)+'"><span>'+E(v.label)+'</span></button>').join('')+'</div>':'';
+    return portrait({...n,image:p.image})+thumbnails+info('源码立绘引用',p.ref)+info('已加载文件',p.path)+(p.sources||[]).map(v=>info('立绘依据',v.source+':'+v.line)).join('')+(n.portraitRef&&!n.image?'<p class="npc-muted">主立绘引用的文件不存在或无法读取。未按相似文件名替换。</p>':'');
+  }
   function actualEvents(n){
-    return (n.events||[]).map(e=>'<div class="npc-panel"><h3>'+E(e.title||e.function||'对白字面量')+'</h3>'+info('事件 ID',e.eventId)+info('来源',e.source+':'+e.line)+info('对白函数',e.function)+info('人物字段引用',e.count)+
-      (e.dialogues||[]).map(d=>'<div class="npc-event-row"><div><strong>'+E(d.speaker||'旁白')+'</strong><p>'+E(d.text)+'</p><small>'+E([d.left&&'左侧：'+d.left,d.right&&'右侧：'+d.right,d.mood&&'表情：'+d.mood].filter(Boolean).join(' · '))+'</small></div></div>').join('')+'</div>').join('')||'<div class="npc-empty">当前定向读取的养成来源中，没有找到明确的对白关联。</div>';
+    return (n.events||[]).map(e=>{
+      const sections=e.sections?.length?e.sections:[e],participants=[...new Set(e.references||(e.dialogues||[]).flatMap(d=>[d.speaker,d.left,d.right]).filter(Boolean))];
+      const title=e.title||e.eventId||'对白片段 · '+(e.function||'字面量');
+      return '<details class="npc-real-event"><summary><span class="npc-real-event-title">'+E(title)+'</span><small>'+E([e.eventId,(e.dialogues||[]).length+' 句对白',participants.length+' 位参与人物'].filter(Boolean).join(' · '))+'</small></summary><div class="npc-real-event-body">'+info('事件 ID',e.eventId)+info('参与人物',participants.join('、'))+'<p class="npc-muted">触发条件未核实。以下按来源片段展示，包含不同分支，不代表一次播放顺序。</p>'+sections.map(section=>'<div class="npc-real-event-section">'+info('对白片段',section.function)+info('来源',section.source+':'+section.line)+
+        (section.dialogues||[]).map(d=>'<div class="npc-event-row"><div><strong>'+E(d.speaker||'旁白')+'</strong><p>'+E(d.text)+'</p><small>'+E([d.left&&'左侧：'+d.left,d.right&&'右侧：'+d.right,d.mood&&'表情：'+d.mood,d.anchor_label&&'分支锚点：'+d.anchor_label].filter(Boolean).join(' · '))+'</small></div></div>').join('')+
+        ((section.branches||[]).length?'<div class="npc-real-branches"><strong>分支与跳转标记</strong>'+(section.branches||[]).map(b=>'<p class="npc-muted">'+E(Object.entries(b).map(([k,v])=>k+'：'+v).join(' · '))+'</p>').join('')+'</div>':'')+
+        (section.code?'<details class="npc-source-code"><summary>查看该片段源码</summary><pre>'+E(section.code)+'</pre></details>':'')+'</div>').join('')+'</div></details>';
+    }).join('')||'<div class="npc-empty">当前定向读取的养成来源中，没有找到明确的对白关联。</div>';
   }
   function actualMechanics(n){
     if(!n.hero)return box('英雄玩法',info('识别结果',n.npcKind==='unverified'?'仅发现立绘映射键，尚未确认出场':'在已读取的英雄配置中无匹配记录')+'<p class="npc-muted">好感、送礼和祝福字段留空，不使用演示数值。</p>');
@@ -107,20 +121,21 @@
   }
   function actualEditor(n){
     let content='';
-    if(tab==='overview')content='<div class="npc-two-col">'+box('人物形象',actualPortrait(n))+box('真实人物信息',info('姓名 / 显示键',n.name)+info('身份依据',n.role)+info('对白来源组',(n.events||[]).length)+info('同名敌人定义',(n.enemies||[]).length)+actualSources(n))+'</div>';
+    if(tab==='overview')content='<div class="npc-two-col">'+box('人物形象',actualPortrait(n))+box('真实人物信息',info('姓名 / 显示键',n.name)+info('身份依据',n.role)+info('事件 / 对白来源组',(n.events||[]).length)+info('同名敌人定义',(n.enemies||[]).length)+actualSources(n))+'</div>';
     if(tab==='portrait')content='<div class="npc-two-col">'+box('本地人物立绘',actualPortrait(n))+box('人物识别依据',info('显示键',n.name)+info('记录 ID',n.id)+actualSources(n)+'<p class="npc-muted">相同图片可被多个称谓共用，不据此合并人物。预览键和仅有映射的记录保留来源状态。</p>')+'</div>';
-    if(tab==='appear')content=box('养成事件与对白来源','<p class="npc-muted">按源码函数归组；标题和事件 ID 只显示直接赋值。函数中可能包含条件分支，下列内容不是一次播放的顺序，也不代表触发条件已经验证。</p>'+actualEvents(n));
+    if(tab==='appear')content=box('养成事件与对白来源','<p class="npc-muted">标题和事件 ID 来自源码。缺少标题时保留对白片段名；仅合并有唯一直接调用依据的辅助片段。</p>'+actualEvents(n));
     if(tab==='mechanics')content=actualMechanics(n);
     if(tab==='combat')content=actualCombat(n);
     return '<div class="npc-studio"><div class="npc-head-note"><span>养成角色工作台 · 真实项目</span><span>本地来源 · 只读</span></div>'+tabs()+content+'</div>';
   }
   function actualPreview(n){
+    const image=selectedPortrait(n).image;
     return '<div class="preview-label">养成人物预览 <span>真实项目 / 只读</span></div>'+
-      '<div class="portrait-frame npc-preview-portrait">'+(n.image?'<img src="'+E(n.image)+'" alt="'+E(n.name)+'的人物图">':'<span class="npc-preview-empty">◉</span>')+
+      '<div class="portrait-frame npc-preview-portrait">'+(image?'<img src="'+E(image)+'" alt="'+E(n.name)+'的人物图">':'<span class="npc-preview-empty">◉</span>')+
       '<div class="portrait-overlay"><strong>'+E(n.name)+'</strong><small>'+E(n.role)+'</small></div></div>'+
       '<div class="npc-preview-identity">'+badge(n.name)+badge(n.role)+((n.enemies||[]).length?badge('有同名敌人定义'):'')+'</div>'+actualSources(n)+
-      '<div class="metric-grid"><div class="metric"><strong>'+(n.events||[]).length+'</strong><small>对白来源组</small></div><div class="metric"><strong>'+(n.image?'1':'0')+'</strong><small>已加载本地立绘</small></div></div>'+
+      '<div class="metric-grid"><div class="metric"><strong>'+(n.events||[]).length+'</strong><small>对白来源组</small></div><div class="metric"><strong>'+(n.portraits?loadedPortraits(n).length:(image?1:0))+'</strong><small>已加载本地立绘</small></div></div>'+
       '<div class="notice">资料来自当前游戏文件夹。姓名相近、图片相同都不会自动合并身份；人物资料、立绘和剧情仅保留在本地内存。</div>';
   }
-  root.GCSNPCStudio={renderEditor,renderPreview,renderRealEditor:actualEditor,renderRealPreview:actualPreview,setTab(t){if(['overview','portrait','appear','mechanics','combat'].includes(t))tab=t;},getTab(){return tab;},kind};
+  root.GCSNPCStudio={renderEditor,renderPreview,renderRealEditor:actualEditor,renderRealPreview:actualPreview,selectRealPortrait,setTab(t){if(['overview','portrait','appear','mechanics','combat'].includes(t))tab=t;},getTab(){return tab;},kind};
 })(typeof window!=='undefined'?window:globalThis);

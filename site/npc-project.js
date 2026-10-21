@@ -1,7 +1,7 @@
 /* Read-only cultivation NPC adapter. Private sources and image bytes stay in the browser. */
 (function(root){
 'use strict';
-const paths={visuals:'scripts/cultivation/ui/cultivation_scene_visuals.gd',data:'scripts/cultivation/cultivation_data.gd',manager:'scripts/cultivation/cultivation_manager.gd',story:'scripts/cultivation/cultivation_story_events.gd',commission:'scripts/cultivation/teahouse_commission_dialogue.gd',enemies:'data/enemies/basic_enemies.json'};
+const paths={visuals:'scripts/cultivation/ui/cultivation_scene_visuals.gd',data:'scripts/cultivation/cultivation_data.gd',manager:'scripts/cultivation/cultivation_manager.gd',story:'scripts/cultivation/cultivation_story_events.gd',commission:'scripts/cultivation/teahouse_commission_dialogue.gd',player:'scripts/cultivation/ui/cultivation_dialogue_player.gd',guqin:'scripts/cultivation/ui/cultivation_guqin_portrait.gd',enemies:'data/enemies/basic_enemies.json'};
 const isName=s=>typeof s==='string'&&/[\u3400-\u9fff]/u.test(s)&&s.length<=24&&s.trim()===s;
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 // Small literal reader, never eval: comments, StringNames, nested dictionaries and arrays.
@@ -13,8 +13,9 @@ function tokens(text){
   out.push({raw,value,type,pos:m.index});
  }return out;
 }
-function valueAt(ts,start){
+function valueAt(ts,start,env={}){
  const t=ts[start];if(!t)return {end:start,value:undefined};
+ if(own(env,t.raw))return {end:start+1,value:env[t.raw]};
  if(t.type==='string'||t.type==='number')return {end:start+1,value:t.value};
  if(['true','false','null'].includes(t.raw))return {end:start+1,value:{true:true,false:false,null:null}[t.raw]};
  if(t.raw!=='{'&&t.raw!=='[')return {end:start+1,value:undefined};
@@ -23,7 +24,7 @@ function valueAt(ts,start){
   if(ts[i].raw===','){i++;continue;}
   let key;
   if(object){key=ts[i++];if(ts[i]?.raw!==':')return {end:i,value:undefined};i++;}
-  const item=valueAt(ts,i);i=item.end;
+  const item=valueAt(ts,i,env);i=item.end;
   // Expressions are not literal values. Skip to the next same-level separator.
   let literal=true,depth=0;
   while(i<ts.length&&(depth||![',',close].includes(ts[i].raw))){literal=false;const r=ts[i++].raw;if(['{','[','('].includes(r))depth++;if(['}',']',')'].includes(r))depth--;}
@@ -42,10 +43,10 @@ function functionBlocks(text){
  const lines=text.split('\n'),out=[];let offset=0,classes=[];
  for(let i=0;i<lines.length;i++){
   const line=lines[i],indent=line.match(/^\s*/)[0].length,cl=line.match(/^\s*class\s+(\w+)/),fn=line.match(/^\s*(?:static\s+)?func\s+(\w+)\s*\(/);
-  if(cl){classes=classes.filter(c=>c.indent<indent);classes.push({indent,name:cl[1]});}
+  if(cl){classes=classes.filter(c=>c.indent<indent);classes.push({indent,name:cl[1],pos:offset});}
   if(fn){let end=i,depth=0;do{for(const t of tokens(lines[end])){if(t.raw==='(')depth++;if(t.raw===')')depth--;}end++;}while(end<lines.length&&depth>0);while(end<lines.length){const l=lines[end];if(l.trim()&&!/^\s*#/.test(l)&&l.match(/^\s*/)[0].length<=indent)break;end++;}
    const owner=classes.filter(c=>c.indent<indent).map(c=>c.name).join('.');
-   out.push({name:fn[1],qualified:owner?owner+'.'+fn[1]:fn[1],line:i+1,pos:offset,code:lines.slice(i,end).join('\n').trimEnd()});
+   out.push({name:fn[1],qualified:owner?owner+'.'+fn[1]:fn[1],line:i+1,pos:offset,scopePos:classes.filter(c=>c.indent<indent).at(-1)?.pos||0,code:lines.slice(i,end).join('\n').trimEnd()});
   }offset+=line.length+1;
  }return out;
 }
@@ -63,19 +64,67 @@ function dialogueBranches(fn){
  }
  return out;
 }
+// Resolve only literal calls to a same-scope dictionary helper. No source is executed.
+function dialogueEntries(text,blocks){
+ const entries=[],templates=new Map();
+ const scope=fn=>fn.qualified.slice(0,-fn.name.length);
+ const constants=fn=>literalConstants(text.slice(fn.scopePos,fn.pos));
+ for(const fn of blocks){
+  const ts=tokens(fn.code),ret=ts.findIndex(t=>t.raw==='return');
+  if(!fn.name.startsWith('_')||ret<0||ts[ret+1]?.raw!=='{'||ts.filter(t=>t.raw==='return').length!==1)continue;
+  const params=[];let i=ts.findIndex(t=>t.raw==='(')+1;
+  while(i<ts.length&&ts[i].raw!==')'){
+   const name=ts[i++].raw;while(i<ts.length&&!['=',',',')'].includes(ts[i].raw))i++;
+   let fallback;if(ts[i]?.raw==='='){const p=valueAt(ts,i+1,constants(fn));fallback=p.value;i=p.end;}
+   params.push({name,fallback});if(ts[i]?.raw===',')i++;else if(ts[i]?.raw!==')')break;
+  }
+  templates.set(fn.qualified,{fn,params,ts:ts.slice(ret+1)});
+ }
+ for(const fn of blocks){
+  if(templates.has(fn.qualified))continue;
+  const ts=tokens(fn.code),env=constants(fn);
+  for(let i=0;i<ts.length;i++){
+   if(ts[i].raw==='{'){const p=valueAt(ts,i,env);if(p.value)entries.push({value:p.value,pos:fn.pos+ts[i].pos});}
+   const helper=templates.get(scope(fn)+ts[i].raw);
+   if(!helper||ts[i+1]?.raw!=='('||ts[i-1]?.raw==='.'||ts[i-1]?.raw==='func')continue;
+   const args=[];let j=i+2,valid=true;
+   while(j<ts.length&&ts[j].raw!==')'){
+    const p=valueAt(ts,j,env);args.push(p.value);j=p.end;
+    if(ts[j]?.raw===',')j++;else if(ts[j]?.raw!==')'){valid=false;break;}
+   }
+   if(!valid||args.length>helper.params.length)continue;
+   const bound={...constants(helper.fn)};helper.params.forEach((p,k)=>{const v=k<args.length?args[k]:p.fallback;if(v!==undefined)bound[p.name]=v;});
+   const d=valueAt(helper.ts,0,bound).value;if(d)entries.push({value:d,pos:fn.pos+ts[i].pos});
+  }
+ }
+ for(const entry of dictionaries(text))if(!blocks.some(f=>entry.pos>=f.pos&&entry.pos<f.pos+f.code.length))entries.push(entry);
+ return entries.sort((a,b)=>a.pos-b.pos);
+}
 function dialogueEvents(text,source){
  const blocks=functionBlocks(text),groups=new Map();
- for(const entry of dictionaries(text)){
+ for(const entry of dialogueEntries(text,blocks)){
   const d=entry.value,participants=['speaker','left','right'].map(k=>d[k]).filter(isName);
-  if(!participants.length&&!(typeof d.text==='string'&&['speaker','left','right'].some(k=>own(d,k))))continue;
+  const control=d.type==='choice'||typeof d.next_label==='string'||typeof d.anchor_label==='string'||d.type==='branch_end';
+  if(!participants.length&&!(typeof d.text==='string'&&['speaker','left','right'].some(k=>own(d,k)))&&!control)continue;
   const fn=blocks.find(f=>entry.pos>=f.pos&&entry.pos<f.pos+f.code.length);
   const branch=dialogueBranches(fn).filter(b=>entry.pos>=fn.pos+b.pos).at(-1);
   const id=(fn?.qualified||'literal_dialogue')+(branch?' ['+branch.label+']':'');let event=groups.get(id);
-  if(!event){event={source,function:id,line:branch?.line||fn?.line||1,eventId:fn?assignment(fn.code,'event_id')||'':'',title:fn?assignment(fn.code,'title')||'':'',dialogues:[],references:[]};groups.set(id,event);}
+  if(!event){event={source,function:id,line:branch?.line||fn?.line||1,eventId:fn?assignment(fn.code,'event_id')||'':'',title:fn?assignment(fn.code,'title')||'':'',dialogues:[],branches:[],references:[],sections:[]};event.sections.push({function:id,source,line:event.line,code:fn?.code||'',dialogues:event.dialogues,branches:event.branches});groups.set(id,event);}
   event.references.push(...participants);
-  if(typeof d.text==='string')event.dialogues.push(Object.fromEntries(['speaker','text','left','right','mood','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
+  if(typeof d.text==='string'&&['speaker','left','right'].some(k=>own(d,k)))event.dialogues.push(Object.fromEntries(['speaker','text','left','right','mood','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
+  if(control)event.branches.push(Object.fromEntries(['type','prompt','text','next_label','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
  }
- return Array.from(groups.values());
+ // A private helper belongs to its sole direct caller in the same scope. Shared
+ // helpers, match arms, unrelated functions and conflicting event IDs stay apart.
+ for(const fn of blocks.filter(f=>f.name.startsWith('_'))){
+  const child=groups.get(fn.qualified);if(!child)continue;
+  const owner=fn.qualified.slice(0,-fn.name.length);
+  const callers=blocks.filter(f=>f!==fn&&f.qualified.slice(0,-f.name.length)===owner&&tokens(f.code).some((t,i,ts)=>t.raw===fn.name&&ts[i+1]?.raw==='('&&ts[i-1]?.raw!=='.'));
+  if(callers.length!==1)continue;
+  const parent=groups.get(callers[0].qualified);if(!parent||parent===child||child.eventId&&parent.eventId!==child.eventId||child.title&&parent.title!==child.title)continue;
+  parent.dialogues=parent.dialogues.concat(child.dialogues);parent.branches=parent.branches.concat(child.branches);parent.references.push(...child.references);parent.sections.push(...child.sections);groups.delete(fn.qualified);
+ }
+ return Array.from(groups.values()).filter(e=>e.references.length);
 }
 function safeResource(ref){
  const path=String(ref||'').replace(/^res:\/\//,'');
@@ -152,7 +201,31 @@ function indexFromSources(sources){
   p.enemies=enemyJson.enemies.filter(e=>e&&e.name===p.name&&typeof e.id==='string').map(e=>({id:e.id,name:e.name,max_hp:e.max_hp,source:paths.enemies}));p.enemy=p.enemies[0]||null;
   if(p.enemies.length&&!p.sources.includes(paths.enemies))p.sources.push(paths.enemies);
  }
+ portraitCandidates(Array.from(people.values()),sources,events);
  return Array.from(people.values()).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
+}
+function portraitCandidates(records,sources,events){
+ const visual=sources.visuals||'',vc=literalConstants(visual),folders=vc.SPEAKER_PORTRAIT_MAP||{},files=vc.SPEAKER_FILENAME_MAP||{},base=vc.PORTRAIT_BASE_PATH;
+ const add=(p,ref,label,source,line)=>{if(!safeResource(ref))return;let v=p.portraits.find(x=>x.ref===ref);if(!v){v={ref,label,image:'',sources:[]};p.portraits.push(v);}if(!v.sources.some(s=>s.source===source&&s.line===line))v.sources.push({source,line});};
+ for(const p of records){p.portraits=[];if(p.portraitRef)add(p,p.portraitRef,'主立绘',paths.visuals,1);}
+ const loader=functionBlocks(visual).find(f=>f.name==='load_portrait_for_speaker');
+ const moodPaths=loader&&/filename\s*=\s*mood\b/.test(loader.code)&&/PORTRAIT_BASE_PATH\s*\+\s*folder\s*\+\s*"\/"\s*\+\s*filename/.test(loader.code);
+ const targets=new Set();
+ for(const m of (sources.player||'').matchAll(/(?:left|right)_speaker\s*!=\s*"([^"\r\n]+)"\s+else\s+current_mood/g))targets.add(m[1]);
+ const addMood=(name,mood,source,line)=>{const p=records.find(p=>p.name===name);if(!p||!moodPaths||files[name]||typeof base!=='string'||typeof folders[name]!=='string'||!/^\w+$/.test(mood))return;add(p,base+folders[name]+'/'+mood+'.png',mood,source,line);};
+ for(const e of events)for(const section of e.sections||[])for(const d of section.dialogues){
+  if(!d.mood)continue;
+  const sides=[d.left,d.right].filter(isName);
+  if(!sides.length&&isName(d.speaker))addMood(d.speaker,d.mood,e.source,section.line);
+  for(const name of sides)if(targets.has(name))addMood(name,d.mood,e.source,section.line);
+ }
+ const detect=functionBlocks(visual).find(f=>f.name==='detect_mood_from_text');
+ const guard=detect?.code.match(/if\s+speaker\s*!=\s*"([^"\r\n]+)"\s*:\s*return\s+"normal"/);
+ if(guard)for(const m of detect.code.matchAll(/return\s+"(\w+)"/g))addMood(guard[1],m[1],paths.visuals,detect.line);
+ // The action-specific renderer explicitly binds the named speaker and texture.
+ const gc=literalConstants(sources.guqin||''),apply=functionBlocks(sources.guqin||'').find(f=>f.name==='apply');
+ const binding=apply?.code.match(/if\s+speaker\s*!=\s*"([^"\r\n]+)"\s+or\s+mood\s*!=\s*"(\w+)"\s*:\s*[^]*?return\s+false/);
+ if(binding&&safeResource(gc.TEXTURE_PATH)){const p=records.find(p=>p.name===binding[1]);if(p)add(p,gc.TEXTURE_PATH,binding[2],paths.guqin,apply.line);}
 }
 async function load(read,makeUrl){
  const source={};for(const [key,path] of Object.entries(paths)){
@@ -162,8 +235,11 @@ async function load(read,makeUrl){
  const records=indexFromSources(source);if(!records.length)throw Error('没有识别到可验证的养成人物；不使用演示数据代替');
  const urls=[];
  const release=()=>{for(const url of urls.splice(0))URL.revokeObjectURL(url);};
- try{for(const p of records){const path=safeResource(p.portraitRef);if(!path)continue;const f=await read(path);
-  if(f&&f.size<=8*1024*1024&&makeUrl){p.image=makeUrl(f);p.portraitPath=path;urls.push(p.image);}
+ const loaded=new Map();
+ try{for(const p of records)for(const portrait of p.portraits){const path=safeResource(portrait.ref);if(!path)continue;
+  if(!loaded.has(path)){const f=await read(path);let image='';if(f&&f.size<=8*1024*1024&&makeUrl){image=makeUrl(f);urls.push(image);}loaded.set(path,image);}
+  portrait.image=loaded.get(path);if(portrait.image)portrait.path=path;
+  if(portrait.ref===p.portraitRef){p.image=portrait.image;if(p.image)p.portraitPath=path;}
  }return {records,release};}catch(e){release();throw e;}
 }
 function fromHandle(handle){return load(async path=>{

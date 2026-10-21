@@ -107,6 +107,7 @@
     if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
     if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);if(realNPCs())render();else{renderEditor();renderPreview();}return;}
+    if(realNPCs()&&a==='npc-portrait-select'){window.GCSNPCStudio.selectRealPortrait(x,i);render();return;}
     if(realNPCs()&&a!=='select')return;
     if(module==='npcs' && a==='npc-go-portrait'){window.GCSNPCStudio.setTab('portrait');renderEditor();return;}
     if(module==='npcs' && a==='npc-event-add'){
