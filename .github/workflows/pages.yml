@@ -22,12 +22,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test schema adapter
+        run: node --test tests/adapter.test.cjs
       - name: Unpack website
         run: |
           test -f site.zip || (echo "Missing site.zip"; exit 1)
           mkdir -p _site
           unzip -q site.zip -d _site
           test -f _site/index.html
+          diff -qr site _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
