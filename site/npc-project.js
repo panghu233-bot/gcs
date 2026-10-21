@@ -38,7 +38,7 @@ function indexFromSources(sources){
  while((m=direct.exec(visual))){
   if(!han(m[1]))continue;
   const literal=m[2]||m[3]||'';
-  if(literal&&(han(literal)||/^(?:true|false|null|\d+)$/i.test(literal)))continue;
+  if(literal&&(/^[\u3400-\u9fff]{2,24}$/u.test(literal)||/^(?:true|false|null|\d+)$/i.test(literal)))continue;
   const trailing=visual.slice(m.index,m.index+260);
   const embedded=trailing.match(/(?:res:\/\/|assets\/)[^"'\s,)]+\.(?:png|jpe?g|webp)|["']([a-z][\w./-]*\.(?:png|jpe?g|webp))["']/i);
   const ref=literal||embedded?.[0]?.replace(/^["']|["']$/g,'')||'';
