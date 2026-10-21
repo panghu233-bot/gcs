@@ -37,6 +37,6 @@ test('folder fallback reads only targeted files and never invents a missing NPC'
  await assert.rejects(reader.fromFileList(files.filter(x=>x.name!=='cultivation_scene_visuals.gd')),/缺少/);
 });
 test('no fabricated character fallback when source mapping is empty',()=>{
- const s=sources();s.visuals='const MAP = {}';
+ const s=sources();s.visuals='const MAP = {}';s.data='';
  assert.deepEqual(reader.indexFromSources(s),[]);
 });
