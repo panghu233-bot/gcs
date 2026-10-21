@@ -33,11 +33,14 @@ jobs:
           git diff --exit-code -- site/vendor/
       - name: Test save safety and adapters
         run: node --test tests/*.test.cjs
-      - name: Unpack website
+      - name: Validate browser scripts
         run: |
-          test -f site.zip || (echo "Missing site.zip"; exit 1)
+          node --check site/app.js
+          node --check site/npc-studio.js
+      - name: Stage current website
+        run: |
           mkdir -p _site
-          unzip -q site.zip -d _site
+          cp -a site/. _site/
           test -f _site/index.html
           diff -qr site _site
       - uses: actions/configure-pages@v5
