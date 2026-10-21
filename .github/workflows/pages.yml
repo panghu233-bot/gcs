@@ -37,6 +37,7 @@ jobs:
         run: |
           node --check site/app.js
           node --check site/npc-studio.js
+          node --check site/npc-project.js
       - name: Stage current website
         run: |
           mkdir -p _site
