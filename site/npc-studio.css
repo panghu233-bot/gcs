@@ -1,0 +1,33 @@
+/* NPC studio: only styles the demo NPC workspace. No shared card styles changed. */
+.npc-studio{max-width:1040px}.npc-head-note{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:11px;color:#9f94ce;margin-top:-5px}
+.npc-tabs{display:flex;gap:3px;flex-wrap:wrap;border-bottom:1px solid #394053;margin:21px 0 19px}
+.npc-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 12px;color:#9ca5ba;font-size:12px}
+.npc-tabs button.active{border-color:#b5a1fb;color:#e6dcff;font-weight:600}
+.npc-two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:15px;align-items:start}
+.npc-panel{background:#1b2030;border:1px solid #343b50;border-radius:12px;padding:17px;min-width:0}
+.npc-panel h3{font-size:14px;font-weight:600;margin:0 0 15px;color:#ecedff}.npc-panel .field{margin-bottom:13px}
+.npc-muted{font-size:11px;color:#909bb3;line-height:1.8;margin:6px 0 12px}
+.npc-portrait-view{height:245px;border:1px solid #47506c;border-radius:10px;background:radial-gradient(ellipse at center,#333b58,#191e2d);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.npc-portrait-view img{max-height:100%;max-width:100%;object-fit:contain}
+.npc-empty-portrait{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#9a91b8;font-size:64px}
+.npc-empty-portrait small{font-size:11px}.npc-inline-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.npc-inline-actions button{font-size:11px;padding:8px 12px}
+.npc-action{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #343a4e;min-width:0}
+.npc-action:last-of-type{border:0}
+.npc-action-icon{width:31px;height:33px;flex-shrink:0;display:grid;place-items:center;background:#30334d;color:#c7b7ff;border-radius:7px;font-size:15px}
+.npc-action>div{flex:1;min-width:0}.npc-action strong{font-weight:550;font-size:12px;display:block}.npc-action small{display:block;color:#95a0b8;font-size:10px;line-height:1.6;margin-top:4px}
+button.npc-link{color:#c9b9ff;font-size:11px;padding:5px 7px;background:transparent;border:0;white-space:nowrap}
+.npc-hint-box{padding:12px 13px;border:1px solid #544d71;background:#2a273e;border-radius:8px;color:#c0b5de;font-size:11px;line-height:1.75;margin-top:15px}
+.npc-event-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #343b50;min-width:0}
+.npc-event-icon{background:#302b48;color:#c6b5fa;border-radius:6px;padding:6px;font-size:15px}
+.npc-event-row>div{flex:1;min-width:0}.npc-event-row strong{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}.npc-event-row small{display:block;font-size:10px;color:#8d98b0;line-height:1.6}
+.npc-event-row button{font-size:10px;white-space:nowrap;padding:5px 7px}.npc-empty{text-align:center;padding:35px 12px;line-height:1.9;color:#929db5;font-size:12px}
+.npc-add-event{display:flex;gap:8px;margin-top:16px}.npc-add-event select{min-width:0;flex:1}.npc-add-event button{white-space:nowrap;font-size:11px}
+.npc-flow{display:flex;flex-direction:column;align-items:center;gap:3px;margin:15px 0}
+.npc-flow>div{background:#2d3047;border:1px solid #4c5571;border-radius:8px;padding:12px;width:100%;text-align:center;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.npc-flow>span{font-size:18px;color:#aea3d6}
+.npc-toggle{display:flex;align-items:center;gap:10px;font-size:12px;color:#d6ddf1;margin:10px 0 20px}.npc-toggle input{width:16px;height:16px}
+.npc-preview-portrait img{object-fit:contain!important}.npc-preview-empty{font-size:72px;color:#9689ce}
+.npc-preview-identity{display:flex;gap:5px;margin-top:14px;flex-wrap:wrap}.npc-tag{border:1px solid #635680;color:#c4b7ef;border-radius:6px;padding:5px 8px;font-size:10px;background:#2b2941}
+@media(max-width:1300px){.npc-two-col{grid-template-columns:1fr}.npc-panel{padding:14px}}
+@media(max-width:700px){.npc-studio{width:100%}.npc-tabs button{font-size:11px;padding:9px}.npc-portrait-view{height:220px}}
