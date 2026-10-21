@@ -15,13 +15,13 @@
  $('apply-confirm').onclick=async()=>{
   const s=GCSProject.getState(),work=s.workspace;if(applying||recoveryRequired||!backupParent||reviewed!==work)return;
   try{work.validate();}catch(e){$('apply-status').textContent='校验失败：'+e.message;return;}
-  const documents=work.documents,originalBytes=s.originalBytes;
+  const documents=work.documents,originalBytes=s.originalBytes,changes=work.changes;
   let authorization;
   try{authorization=s.handle.requestPermission({mode:'readwrite'});}catch(e){$('apply-status').textContent='无法请求写入授权：'+e.message;return;}
   applying=true;work.setLocked(true);$('apply-confirm').disabled=true;$('apply-backup').disabled=true;$('apply-close').disabled=true;$('apply-status').textContent='等待授权；授权后将备份、校验并应用。请勿关闭页面。';
   try{
    if(await authorization!=='granted')throw new Error('未获得写入权限，原文件未修改');
-   const result=await GCSGameWriter.safeApply({project:s.handle,backupParent,adapter:GCSNingguAdapter,documents,originalBytes,validate:()=>work.validate(),permissionGranted:true});
+   const result=await GCSGameWriter.safeApply({project:s.handle,backupParent,adapter:GCSNingguAdapter,documents,originalBytes,changes,validate:()=>work.validate(),permissionGranted:true});
    GCSProject.applied(result.originalBytes);$('apply-status').textContent='应用成功，两份文件已读回验证。备份：'+backupParent.name+' / '+result.backupName;
   }catch(e){recoveryRequired=!!e.recoveryNeeded;const message='未完成应用：'+e.message+(e.backupName?'；备份：'+backupParent.name+' / '+e.backupName:'');$('apply-status').textContent=message;GCSProject.report(message);}
   finally{applying=false;work.setLocked(false);$('apply-backup').disabled=false;$('apply-close').disabled=false;controls();}

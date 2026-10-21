@@ -25,7 +25,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test schema adapter
+      - name: Install pinned vendor build dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify vendored JSON parser bundle
+        run: |
+          npm run vendor:jsonc
+          git diff --exit-code -- site/vendor/
+      - name: Test save safety and adapters
         run: node --test tests/*.test.cjs
       - name: Unpack website
         run: |

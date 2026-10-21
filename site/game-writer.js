@@ -1,20 +1,22 @@
 /* Two-file staged writer. Backups are verified outside the project before originals are opened for writing. */
 (function(root){
  'use strict';
+ const patcher=typeof module!=='undefined'?require('./json-value-patch.js'):root.GCSJSONPatch;
  const bytes=async file=>new Uint8Array(await file.arrayBuffer());
  const equal=(a,b)=>a.length===b.length && a.every((v,i)=>v===b[i]);
  async function locate(root,path){const parts=path.split('/');if(parts.some(p=>!p||p==='.'||p==='..'||p.includes(String.fromCharCode(92))))throw new Error('无效的目标路径');let dir=root;for(const p of parts.slice(0,-1))dir=await dir.getDirectoryHandle(p,{create:false});return dir.getFileHandle(parts.at(-1),{create:false});}
  async function writeAndVerify(handle,data){let stream;try{stream=await handle.createWritable({mode:'exclusive'});await stream.write(data);await stream.close();}catch(e){if(stream)await stream.abort().catch(()=>{});throw e;}if(!equal(await bytes(await handle.getFile()),data))throw new Error('备份读回校验失败');}
- async function safeApply({project,backupParent,adapter,documents,originalBytes,validate,permissionGranted=false,uuid=()=>crypto.randomUUID()}){
+ async function safeApply({project,backupParent,adapter,documents,originalBytes,changes,validate,permissionGranted=false,uuid=()=>crypto.randomUUID()}){
   if(!permissionGranted)throw new Error('需要用户主动授权写入');
   validate();adapter.validateDocuments(documents);
   if(!backupParent || await project.resolve(backupParent)!==null)throw new Error('备份目录必须在游戏项目之外');
   const entries=Object.entries(adapter.projectFiles);if(entries.length!==2 || new Set(entries.map(([,path])=>path.split('/').at(-1))).size!==2)throw new Error('只允许处理两份已声明 JSON');
   const targets=[],streams=[],attempted=[];let backupName='',backupVerified=false;
   try {
+   if(!patcher?.plan)throw new Error('局部保存组件不可用，拒绝写回');
+   const prepared=patcher.plan({adapter,originalBytes,documents,changes});
    for(const [key,path] of entries){const handle=await locate(project,path),before=new Uint8Array(originalBytes[key]);if(!equal(await bytes(await handle.getFile()),before))throw new Error('磁盘文件已变化，请保留草稿并重新读取后比较：'+path);
-    const changed=JSON.stringify(JSON.parse(new TextDecoder().decode(before)))!==JSON.stringify(documents[key]);
-    const after=changed?new TextEncoder().encode(JSON.stringify(documents[key],null,2)+'\n'):before;
+    const after=prepared.output[key],changed=!equal(before,after);
     targets.push({key,path,handle,before,after,changed});
    }
    if(!targets.some(t=>t.changed))throw new Error('没有需要应用的修改');
