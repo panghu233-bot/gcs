@@ -50,7 +50,11 @@
     $('#record-list').innerHTML=records.length?records.map(x=>`<button class="record ${x.id===selected?'active':''}" data-action="select" data-id="${esc(x.id)}">${module==='npcs'&&x.image?`<img class="avatar" src="${esc(x.image)}" alt="">`:`<span class="record-symbol">${module==='events'?'☷':module==='cards'?'◇':'◉'}</span>`}<span class="record-info"><span class="record-title">${esc(label(x))}</span><span class="record-sub">${esc(module==='npcs'?x.role:module==='events'?`${x.dialogues.length} 句对白 · ${x.choices.length} 个选项`:`${x.kind} · ${x.rarity} · 费用 ${x.cost}`)}</span></span></button>`).join(''):empty(query?'没有匹配的内容':'列表为空，点击 ＋ 新建');
     if(module==='cards')$('#library-en').textContent='DEMO / 未连接游戏项目';
   }
+  function syncWorkspaceLayout() {
+    $('.workspace').classList.toggle('event-workspace',realEvents());
+  }
   function render() {
+    syncWorkspaceLayout();
     if(realEvents()){renderList();window.GCSEventStudio.render($('#editor'),$('#preview'));return;}
     if(realNPCs()){
       const state=window.GCSProject.getState();

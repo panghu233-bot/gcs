@@ -43,3 +43,12 @@
 
 /* Phase 1: event reading and selected-row draft editing. */
 .event-script{display:flex;flex-direction:column;gap:10px;margin:18px 0}.event-script-row{display:block;width:100%;text-align:left;white-space:normal;padding:16px;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit}.event-script-row.selected{border-color:#a99bfa;background:#28243a}.event-script-row:focus-visible{outline:2px solid #c8b9ff;outline-offset:2px}.event-script-speaker{font-size:12px;color:var(--muted,#b5adc7)}.event-script-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;margin:8px 0 0;font-size:15px}.event-line-actions{margin:12px 0 0}.event-inline-field{display:block;margin:12px 0}.event-inline-field textarea{width:100%;min-height:140px}
+
+/* Real events use the preview column for the script. The open modifier reserves a future performance panel. */
+.workspace.event-workspace > #editor{min-width:0}
+.workspace.event-workspace:not(.event-preview-open) > #preview{display:none}
+.workspace.event-workspace:not(.event-preview-open) > #editor{grid-column:3 / -1}
+.workspace.event-workspace > #editor > *{width:100%;max-width:860px;margin-inline:auto}
+.workspace.event-workspace.event-preview-open > #editor{grid-column:3}
+.workspace.event-workspace.event-preview-open > #preview{grid-column:4}
+@media(max-width:1000px){.workspace.event-workspace.event-preview-open > #preview{grid-column:3}}
