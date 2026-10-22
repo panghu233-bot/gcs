@@ -88,7 +88,7 @@
   function actualPortrait(n){
     const p=selectedPortrait(n),list=loadedPortraits(n);
     const thumbnails=list.length>1?'<div class="npc-portrait-thumbnails" role="group" aria-label="切换本地人物立绘">'+list.map((v,i)=>'<button type="button" data-action="npc-portrait-select" data-index="'+i+'" aria-pressed="'+(v.ref===p.ref)+'" title="'+E(v.label+' · '+v.ref)+'"><img src="'+E(v.image)+'" alt="'+E(v.label)+'"><span>'+E(v.label)+'</span></button>').join('')+'</div>':'';
-    return portrait({...n,image:p.image})+thumbnails+info('源码立绘引用',p.ref)+info('已加载文件',p.path)+(p.sources||[]).map(v=>info('立绘依据',v.source+':'+v.line)).join('')+(n.portraitRef&&!n.image?'<p class="npc-muted">主立绘引用的文件不存在或无法读取。未按相似文件名替换。</p>':'');
+    return portrait({...n,image:p.image})+thumbnails+'<div class="npc-inline-actions"><button type="button" data-action="npc-portrait-replace" '+(!p.image||!p.path||!p.originalBytes||!root.GCSProject?.getState().handle?'disabled':'')+'>更换图片</button></div><p class="npc-muted">'+(!root.GCSProject?.getState().handle?'当前文件夹兼容模式只读；请用支持目录访问的 Chrome / Edge 重新连接。':!p.image||!p.originalBytes?'当前图片不存在或未取得原图快照，无法替换。':'仅替换当前版本的现有 PNG。先对比、备份和授权，才会写入游戏。')+'</p>'+info('源码立绘引用',p.ref)+info('已加载文件',p.path)+(p.sources||[]).map(v=>info('立绘依据',v.source+':'+v.line)).join('')+(n.portraitRef&&!n.image?'<p class="npc-muted">主立绘引用的文件不存在或无法读取。未按相似文件名替换。</p>':'');
   }
   function actualEvents(n){
     return (n.events||[]).map(e=>{
@@ -126,16 +126,16 @@
     if(tab==='appear')content=box('养成事件与对白来源','<p class="npc-muted">标题和事件 ID 来自源码。缺少标题时保留对白片段名；仅合并有唯一直接调用依据的辅助片段。</p>'+actualEvents(n));
     if(tab==='mechanics')content=actualMechanics(n);
     if(tab==='combat')content=actualCombat(n);
-    return '<div class="npc-studio"><div class="npc-head-note"><span>养成角色工作台 · 真实项目</span><span>本地来源 · 只读</span></div>'+tabs()+content+'</div>';
+    return '<div class="npc-studio"><div class="npc-head-note"><span>养成角色工作台 · 真实项目</span><span>立绘可替换 · 人物资料只读</span></div>'+tabs()+content+'</div>';
   }
   function actualPreview(n){
     const image=selectedPortrait(n).image;
-    return '<div class="preview-label">养成人物预览 <span>真实项目 / 只读</span></div>'+
+    return '<div class="preview-label">养成人物预览 <span>真实项目 / 立绘可替换</span></div>'+
       '<div class="portrait-frame npc-preview-portrait">'+(image?'<img src="'+E(image)+'" alt="'+E(n.name)+'的人物图">':'<span class="npc-preview-empty">◉</span>')+
       '<div class="portrait-overlay"><strong>'+E(n.name)+'</strong><small>'+E(n.role)+'</small></div></div>'+
       '<div class="npc-preview-identity">'+badge(n.name)+badge(n.role)+((n.enemies||[]).length?badge('有同名敌人定义'):'')+'</div>'+actualSources(n)+
       '<div class="metric-grid"><div class="metric"><strong>'+(n.events||[]).length+'</strong><small>对白来源组</small></div><div class="metric"><strong>'+(n.portraits?loadedPortraits(n).length:(image?1:0))+'</strong><small>已加载本地立绘</small></div></div>'+
       '<div class="notice">资料来自当前游戏文件夹。姓名相近、图片相同都不会自动合并身份；人物资料、立绘和剧情仅保留在本地内存。</div>';
   }
-  root.GCSNPCStudio={renderEditor,renderPreview,renderRealEditor:actualEditor,renderRealPreview:actualPreview,selectRealPortrait,setTab(t){if(['overview','portrait','appear','mechanics','combat'].includes(t))tab=t;},getTab(){return tab;},kind};
+  root.GCSNPCStudio={renderEditor,renderPreview,renderRealEditor:actualEditor,renderRealPreview:actualPreview,selectRealPortrait,selectedPortrait,setTab(t){if(['overview','portrait','appear','mechanics','combat'].includes(t))tab=t;},getTab(){return tab;},kind};
 })(typeof window!=='undefined'?window:globalThis);

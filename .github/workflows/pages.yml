@@ -38,6 +38,8 @@ jobs:
           node --check site/app.js
           node --check site/npc-studio.js
           node --check site/npc-project.js
+          node --check site/npc-portrait-writer.js
+          node --check site/npc-portrait-controller.js
       - name: Stage current website
         run: |
           mkdir -p _site

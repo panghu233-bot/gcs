@@ -56,3 +56,13 @@ test('NPC read failures stay isolated from cards and refresh releases stale port
  failNpc=true;await p.refresh();assert.equal(releases,2);assert.equal(p.getState().connected,true);assert.equal(p.getState().records[0].id,'example');assert.deepEqual(p.getState().npcRecords,[]);assert.match(p.getState().npcError,/source unavailable/);
  failNpc=false;await p.refresh();await p.disconnect();assert.equal(releases,3);assert.equal(p.getState().npcRecords,null);
 });
+test('portrait refresh preserves the exact card workspace and its unapplied edits',async()=>{
+ const {createWorkspace}=require('../site/card-workspace.js'),realAdapter=require('../site/ninggu-adapter.js');
+ const raw={cards:{cards:[{id:'example',name:'Example',damage:5}]},branches:{branches:{example:[]}}};let updates=0;
+ const records=[{id:'npc',name:'Example NPC'}],npcReader={fromHandle:async()=>({records,updatePortrait(p,b){assert.equal(p,'portraits/test.png');assert.equal(b[0],7);updates++;}})};
+ const h=handle();h.getFileHandle=async name=>({getFile:async()=>file(name==='catalog.json'?raw.cards:raw.branches)});
+ const p=createProject({adapter:{...realAdapter,projectFiles:adapter.projectFiles},store:{save:async()=>{},load:async()=>null},npcReader,createWorkspace});await p.open(async()=>h);
+ const w=p.getState().workspace;w.edit('example','damage',9);const changes=w.changes;p.portraitApplied(h,records,'portraits/test.png',new Uint8Array([7]));
+ assert.equal(updates,1);assert.equal(p.getState().workspace,w);assert.deepEqual(w.changes,changes);assert.equal(w.value(w.fields.find(f=>f.key==='damage')),9);
+ await p.disconnect();assert.throws(()=>p.portraitApplied(h,records,'portraits/test.png',new Uint8Array([7])),/变化/);
+});

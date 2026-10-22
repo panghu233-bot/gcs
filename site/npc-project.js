@@ -247,14 +247,20 @@ async function load(read,makeUrl){
   if(f.size>4*1024*1024)throw Error('NPC 来源文件超过 4 MB：'+path);source[key]=await f.text();
  }
  const records=indexFromSources(source);if(!records.length)throw Error('没有识别到可验证的养成人物；不使用演示数据代替');
- const urls=[];
- const release=()=>{for(const url of urls.splice(0))URL.revokeObjectURL(url);};
+ const urls=new Set();
+ const release=()=>{for(const url of urls)URL.revokeObjectURL(url);urls.clear();};
  const loaded=new Map();
  try{for(const p of records)for(const portrait of p.portraits){const path=safeResource(portrait.ref);if(!path)continue;
-  if(!loaded.has(path)){const f=await read(path);let image='';if(f&&f.size<=8*1024*1024&&makeUrl){image=makeUrl(f);urls.push(image);}loaded.set(path,image);}
-  portrait.image=loaded.get(path);if(portrait.image)portrait.path=path;
+  if(!loaded.has(path)){const f=await read(path);let image='',originalBytes=null;if(f&&f.size<=8*1024*1024&&makeUrl){originalBytes=f.arrayBuffer?new Uint8Array(await f.arrayBuffer()):null;image=makeUrl(f);urls.add(image);}loaded.set(path,{image,originalBytes});}
+  Object.assign(portrait,loaded.get(path));if(portrait.image)portrait.path=path;
   if(portrait.ref===p.portraitRef){p.image=portrait.image;if(p.image)p.portraitPath=path;}
- }return {records,release};}catch(e){release();throw e;}
+ }return {records,release,updatePortrait(path,bytes){
+  const previous=loaded.get(path);if(!previous?.image)throw Error('立绘来源已失效');
+  const originalBytes=new Uint8Array(bytes),image=makeUrl(new Blob([originalBytes],{type:'image/png'}));urls.add(image);
+  loaded.set(path,{image,originalBytes});
+  for(const n of records)for(const p of n.portraits)if(p.path===path){Object.assign(p,{image,originalBytes});if(p.ref===n.portraitRef)n.image=image;}
+  URL.revokeObjectURL(previous.image);urls.delete(previous.image);
+ }};}catch(e){release();throw e;}
 }
 function fromHandle(handle){return load(async path=>{
  const parts=path.split('/');let dir=handle;

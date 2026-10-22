@@ -102,3 +102,10 @@ test('real event summaries default closed and portrait selection synchronizes bo
  studio.selectRealPortrait(n,1);assert.match(studio.renderRealEditor(n),/src="blob:local-1"/);assert.match(studio.renderRealPreview(n),/src="blob:local-1"/);assert.doesNotMatch(studio.renderRealPreview(n),/src="blob:local-0"/);
  const single={...n,portraits:[n.portraits[0]]};assert.doesNotMatch(studio.renderRealEditor(single),/npc-portrait-select/);
 });
+test('portrait snapshots refresh shared sources, preserve mood selection and release replaced object URLs',async()=>{
+ const {png}=require('./helpers/synthetic-png.cjs'),s=sources(),files=Object.entries(reader.paths).map(([k,p])=>({webkitRelativePath:'root/'+p,size:1,text:async()=>s[k]||''}));
+ for(const ref of new Set(reader.indexFromSources(s).flatMap(n=>n.portraits.map(p=>p.ref))))files.push({webkitRelativePath:'root/'+ref.slice(6),size:png().length,arrayBuffer:async()=>Uint8Array.from(png()).buffer});
+ const create=URL.createObjectURL,revoke=URL.revokeObjectURL,made=[],freed=[];URL.createObjectURL=()=>{const u='blob:new-'+made.length;made.push(u);return u;};URL.revokeObjectURL=u=>freed.push(u);
+ try{const result=await reader.fromFileList(files),a=result.records.find(n=>n.name==='甲角色'),b=result.records.find(n=>n.name==='乙角色'),p=a.portraits[0],old=p.image,other=a.portraits.find(p=>p.path!==a.portraits[0].path),otherImage=other.image;
+ assert.deepEqual(p.originalBytes,new Uint8Array(png()));result.updatePortrait(p.path,png(240));assert.notEqual(p.image,old);assert.equal(p.image,b.image);assert.equal(a.image,p.image);assert.deepEqual(p.originalBytes,new Uint8Array(png(240)));assert.equal(other.image,otherImage);assert.deepEqual(freed,[old]);result.release();assert.deepEqual([...freed].sort(),[...made].sort());}finally{URL.createObjectURL=create;URL.revokeObjectURL=revoke;}
+});

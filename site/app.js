@@ -33,9 +33,9 @@
     $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
     $('#add-btn').hidden=realCards()||realNPCs();
-    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 来源可追溯 · 只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
+    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 立绘可替换 · 资料只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
     const connection=window.GCSProject.getState();
-    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 只读 · 剧情演示':data.project.name+' / 演示项目';
+    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 立绘可替换 · 剧情演示':data.project.name+' / 演示项目';
     if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
     if(realNPCs()){
       const all=npcRecords(),hits=all.filter(x=>(x.name+' '+x.portraitRef+' '+x.sources.join(' ')).toLowerCase().includes(query.toLowerCase()));
@@ -107,6 +107,7 @@
     if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
     if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);if(realNPCs())render();else{renderEditor();renderPreview();}return;}
+    if(realNPCs()&&a==='npc-portrait-replace'){window.GCSNPCPortraitController.open(x,window.GCSNPCStudio.selectedPortrait(x));return;}
     if(realNPCs()&&a==='npc-portrait-select'){window.GCSNPCStudio.selectRealPortrait(x,i);render();return;}
     if(realNPCs()&&a!=='select')return;
     if(module==='npcs' && a==='npc-go-portrait'){window.GCSNPCStudio.setTab('portrait');renderEditor();return;}
