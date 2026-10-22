@@ -35,7 +35,7 @@ function rules(visualSource,playerSource){
 }
 function safePath(ref){const p=String(ref).replace(/^res:\/\//,'');if(!p.startsWith('assets/')||/[\\:\x00-\x1f]/.test(p)||p.split('/').some(s=>!s||s==='.'||s==='..')||!p.endsWith('.png'))throw Error('立绘路径不安全');return p;}
 function create({read,makeUrl=f=>URL.createObjectURL(f),revokeUrl=u=>URL.revokeObjectURL(u)}){
- let disposed=false,rulePromise;const cache=new Map(),urls=new Set();
+ let disposed=false,rulePromise,catalogPromise;const cache=new Map(),urls=new Set();
  const active=()=>{if(disposed)throw Error('项目连接已释放');};
  async function source(path){active();const f=await read(path);active();if(!f||f.size>4*1024*1024)throw Error('缺少或无法读取立绘规则：'+path);return f.text();}
  function getRules(){active();return rulePromise??=Promise.all([source(paths.visuals),source(paths.player)]).then(([v,p])=>{active();return rules(v,p);});}
@@ -45,6 +45,17 @@ function create({read,makeUrl=f=>URL.createObjectURL(f),revokeUrl=u=>URL.revokeO
    const bytes=new Uint8Array(await f.arrayBuffer());active();if(![137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))throw Error('立绘不是有效 PNG：'+path);
    const image=makeUrl(f);urls.add(image);return image;
   })());return cache.get(path);
+ }
+ async function catalog(){
+  active();return catalogPromise??=(async()=>{
+   const r=await getRules();active();const names=[...new Set([...Object.keys(r.folders),...Object.keys(r.files)])].sort((a,b)=>a.localeCompare(b,'zh-Hans-CN')),moods=[];
+   if(names.includes('顾清寒')&&!r.files['顾清寒'])for(const mood of ordinary){
+    const path=safePath(r.base+(r.folders['顾清寒']||'npc')+'/'+mood+'.png'),f=await read(path);active();
+    if(!f||!f.size||f.size>8*1024*1024)continue;
+    const bytes=new Uint8Array(await f.arrayBuffer());active();if([137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))moods.push(mood);
+   }
+   return {names,moods};
+  })();
  }
  async function portrait(name,mood){
   if(!name)return {name:'',image:'',mood:'',empty:true};
@@ -57,7 +68,7 @@ function create({read,makeUrl=f=>URL.createObjectURL(f),revokeUrl=u=>URL.revokeO
   if(fallback!==path){url=await image(fallback);active();if(url)return {name,image:url,path:fallback,mood:'normal',warning:'所需立绘缺失，显示 normal 回退图'};}
   return {name,image:'',path,mood:effective,error:'本地立绘文件缺失'};
  }
- return {async load(line){active();const mood=line.mood||'normal';const [left,right]=await Promise.all([portrait(line.left||'',mood),portrait(line.right||'',mood)]);active();return {left,right};},release(){if(disposed)return;disposed=true;for(const url of urls)revokeUrl(url);urls.clear();cache.clear();}};
+ return {async choices(line){const c=await catalog();active();const expressive=line.left==='顾清寒'||line.right==='顾清寒';return {names:[...c.names],moods:expressive?[...c.moods]:['normal'],moodEnabled:expressive&&c.moods.length>0};},async load(line){active();const mood=line.mood||'normal';const [left,right]=await Promise.all([portrait(line.left||'',mood),portrait(line.right||'',mood)]);active();return {left,right};},release(){if(disposed)return;disposed=true;for(const url of urls)revokeUrl(url);urls.clear();cache.clear();}};
 }
 const api={create,rules,safePath,paths};if(typeof module!=='undefined')module.exports=api;root.GCSEventPerformance=api;
 })(typeof window!=='undefined'?window:globalThis);

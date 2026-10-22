@@ -38,3 +38,12 @@ test('folder and file-list event readers attach lazy preview without reading any
  const w=await event.fromHandle(dir());assert(w.performance);assert.equal(reads.length,2);w.release();
  const list=Object.entries(files).map(([path,bytes])=>{const b=new Blob([bytes]);b.webkitRelativePath='game/'+path;return b;});const other=await event.fromFileList(list);assert(other.performance);other.release();
 });
+
+
+test('edit choices come from actual mappings and present ordinary PNGs; NPC portraits stay fixed',async()=>{
+ const x=setup();x.files.set('assets/portraits/hero/attack.png',new Blob([png]));x.files.set('assets/portraits/hero/fishing.png',new Blob([png]));
+ const c=await x.p.choices({left:'',right:'顾清寒'});assert.deepEqual([...c.names].sort(),['顾清寒','顾飞雪','老人'].sort());assert.deepEqual(c.moods,['normal','shy']);assert(c.moodEnabled);assert.equal(x.made.length,0);
+ const n=await x.p.choices({speaker:'顾清寒',left:'老人',right:'顾飞雪'});assert.deepEqual(n.moods,['normal']);assert(!n.moodEnabled);assert(!x.reads.some(p=>/attack|fishing/.test(p)));
+ const r=await x.p.load({speaker:'老人',left:'顾清寒',right:'顾飞雪',mood:'shy'});assert.equal(r.left.path,'assets/portraits/hero/shy.png');assert.equal(r.right.path,'assets/portraits/mother/normal.png');
+ const y=setup();y.files.delete('assets/portraits/hero/shy.png');assert.deepEqual((await y.p.choices({right:'顾清寒'})).moods,['normal']);
+});

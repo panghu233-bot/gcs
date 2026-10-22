@@ -43,6 +43,7 @@ test('boundaries and locks guard every structural and redo operation',()=>{
 class Element{
  constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.listeners={};this.disabled=false;this.textContent='';}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=nodes;}get lastChild(){return this.children.at(-1);}
+ insertBefore(node,before){this.children=this.children.filter(n=>n!==node);const i=this.children.indexOf(before);if(i<0)throw Error('Unknown insertion reference');this.children.splice(i,0,node);}
  setAttribute(k,v){this[k]=v;}addEventListener(k,f){this.listeners[k]=f;}showModal(){this.open=true;}close(){this.open=false;this.listeners.close?.();}
 }
 const descendants=n=>[n,...n.children.flatMap(descendants)];
@@ -112,4 +113,32 @@ test('a slow old portrait response cannot replace the newest selected line',asyn
  const result=image=>({left:{name:'',empty:true},right:{name:'测试人物',image,mood:'normal'}});
  pending[1].resolve(result('blob:new'));await flush();pending[0].resolve(result('blob:old'));await flush();assert.equal(descendants(x.preview).find(n=>n.tag==='img').src,'blob:new');assert.equal(x.w.selectedIndex,5);
  x.find('演出预览').onclick();assert.equal(x.preview.children.length,0);
+});
+
+
+test('performance panel edits four independent fields only in edit mode and previews the selected row',async()=>{
+ const x=ui(),flush=()=>new Promise(resolve=>setImmediate(resolve)),names=['测试人物','顾清寒','顾飞雪','老人'];
+ x.w.performance={choices:async line=>({names,moods:line.left==='顾清寒'||line.right==='顾清寒'?['normal','shy']:['normal'],moodEnabled:line.left==='顾清寒'||line.right==='顾清寒'}),load:async line=>{
+  const portrait=name=>name?{name,mood:name==='顾清寒'?line.mood:'normal',image:'blob:'+name+':'+(name==='顾清寒'?line.mood:'normal'),path:'assets/'+name+'/'+(name==='顾清寒'?line.mood:'normal')+'.png'}:{name:'',empty:true};return {left:portrait(line.left),right:portrait(line.right)};
+ }};
+ const fields=()=>Object.fromEntries(descendants(x.preview).filter(n=>n.tag==='select').map(n=>[n.dataset.performanceField,n]));
+ const choose=async(key,value)=>{const select=fields()[key];assert(select&&!select.disabled);select.value=value;select.onchange();await flush();};
+ x.find('演出预览').onclick();await flush();assert.equal(Object.keys(fields()).length,0);
+ x.find('编辑剧本').onclick();await flush();assert.deepEqual(Object.keys(fields()),['speaker','left','right','mood']);assert(fields().left.children.some(o=>o.value===''));assert(fields().right.children.some(o=>o.value===''));
+ const old=x.w.lines,stage=x.preview.children.find(n=>n.className==='event-performance-stage'),settings=x.preview.children.find(n=>n.className==='event-performance-settings');assert(x.preview.children.indexOf(settings)<x.preview.children.indexOf(stage));
+ await choose('speaker','顾飞雪');assert.equal(x.w.lines[0].right,old[0].right);assert.equal(x.w.lines[0].left,old[0].left);assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(x.find('查看差异并应用').disabled);assert(x.find('从备份恢复').disabled);
+ await choose('right','顾清寒');await choose('mood','shy');assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(descendants(x.preview).some(n=>n.tag==='img'&&n.src==='blob:顾清寒:shy'));assert.deepEqual(x.w.lines.slice(1),old.slice(1));
+ const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='演出与文字草稿';input.selectionStart=3;input.selectionEnd=3;input.oninput();await flush();assert.equal(descendants(x.editor).find(n=>n.tag==='textarea'),input);assert.equal(input.selectionStart,3);assert.equal(fields().mood.value,'shy');
+ const rows=()=>descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'));rows()[1].onclick();await flush();assert.equal(fields().right.value,old[1].right);assert.equal(fields().mood.value,'normal');rows()[0].onclick();await flush();assert.equal(fields().mood.value,'shy');
+ await choose('left','老人');assert.equal(x.w.lines[0].speaker,'顾飞雪');await choose('left','');assert.equal(x.w.lines[0].left,'');await choose('right','老人');assert(fields().mood.disabled);assert.equal(x.w.lines[0].mood,'shy');assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(x.find('查看差异并应用').disabled);
+ x.find('撤销一步').onclick();await flush();assert.equal(fields().right.value,'顾清寒');assert(!fields().mood.disabled);x.find('重做').onclick();await flush();assert.equal(fields().right.value,'老人');
+ x.find('完成编辑').onclick();await flush();assert.equal(Object.keys(fields()).length,0);assert(x.w.hasUnsupportedChanges);x.w.discard();x.w.set(0,'仅文字');x.find('编辑剧本').onclick();await flush();assert(!x.find('查看差异并应用').disabled);
+});
+
+test('late performance-choice responses never attach stale controls to a new selection',async()=>{
+ const x=ui(),flush=()=>new Promise(resolve=>setImmediate(resolve)),pending=[];
+ x.w.performance={choices:line=>new Promise(resolve=>pending.push({line,resolve})),load:async line=>({left:{name:'',empty:true},right:{name:line.right,image:'blob:test',mood:'normal'}})};
+ x.find('演出预览').onclick();x.find('编辑剧本').onclick();await flush();descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'))[4].onclick();await flush();
+ const current=pending.at(-1);current.resolve({names:['测试人物','顾飞雪'],moods:['normal'],moodEnabled:false});await flush();for(const old of pending.slice(0,-1))old.resolve({names:['旧选项'],moods:['shy'],moodEnabled:true});await flush();
+ const right=descendants(x.preview).find(n=>n.tag==='select'&&n.dataset.performanceField==='right');assert(right.children.some(o=>o.value==='顾飞雪'));assert(!right.children.some(o=>o.value==='旧选项'));assert.equal(x.w.selectedIndex,4);
 });

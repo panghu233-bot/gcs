@@ -20,13 +20,16 @@ function parse(files){
  function remember(){history.push(snapshot());if(history.length>100)history.shift();future.length=0;}
  function restore(s){draft=copy(s.rows);selectedId=s.selectedId;}
  const structural=()=>draft.length!==baseline.length||draft.some((l,i)=>l.id!==baseline[i].id);
+ const performanceKeys=['speaker','left','right','mood'];
+ const performanceChanges=()=>draft.flatMap((row,index)=>{const original=baseline.find(b=>b.id===row.id);return original?performanceKeys.filter(key=>row[key]!==original[key]).map(key=>({kind:'performance',index,key,before:original[key],after:row[key]})):[];});
  const workspace={manifest,originalBytes,entryBytes,openingBackground:parsed.openingBg,
   get lines(){return copy(draft);},get texts(){return draft.map(l=>l.text);},
   get selectedIndex(){return draft.findIndex(l=>l.id===selectedId);},
   select(index){selectedId=at(index).id;},
-  get locked(){return locked;},get blocked(){return blocked;},get hasStructuralChanges(){return structural();},
-  get changes(){const texts=draft.flatMap(l=>{const index=baseline.findIndex(b=>b.id===l.id);return index<0||l.text===baseline[index].text?[]:[{index,before:baseline[index].text,after:l.text}];});return structural()?[{kind:'structure'},...texts]:texts;},
+  get locked(){return locked;},get blocked(){return blocked;},get hasStructuralChanges(){return structural();},get hasPerformanceChanges(){return performanceChanges().length>0;},get hasUnsupportedChanges(){return structural()||performanceChanges().length>0;},
+  get changes(){const texts=draft.flatMap(l=>{const index=baseline.findIndex(b=>b.id===l.id);return index<0||l.text===baseline[index].text?[]:[{index,before:baseline[index].text,after:l.text}];});return [...(structural()?[{kind:'structure'}]:[]),...performanceChanges(),...texts];},
   set(index,value){writable();const row=at(index);if(typeof value!=='string'||value.length>20000)throw Error('对白必须是 20000 字以内的文本');if(row.text!==value){remember();row.text=value;}},
+  setPerformance(index,key,value){writable();const row=at(index);if(!performanceKeys.includes(key)||typeof value!=='string'||value.length>200||!value&&key==='mood')throw Error('无效的演出设置');if(row[key]!==value){remember();row[key]=value;}},
   insert(index,after=false){writable();const row=at(index);remember();const next={...row,id:'draft-'+serial++,text:'',line:null};draft.splice(index+(after?1:0),0,next);selectedId=next.id;},
   duplicate(index){writable();const row=at(index);remember();const next={...row,id:'draft-'+serial++,line:null};draft.splice(index+1,0,next);selectedId=next.id;},
   remove(index){writable();at(index);if(draft.length===1)throw Error('至少保留一句对白');remember();draft.splice(index,1);selectedId=draft[Math.min(index,draft.length-1)].id;},
@@ -36,7 +39,7 @@ function parse(files){
   redo(){writable();if(future.length){history.push(snapshot());restore(future.pop());}},
   discard(){writable();draft=copy(baseline);selectedId=draft[0].id;history.length=0;future.length=0;},
   setLocked(value){locked=!!value;},block(){blocked=true;},
-  plan(){if(structural())throw Error('结构修改仅保留内存草稿，第一阶段不支持写回；请撤销结构修改后再保存文字');return patch.plan({originalBytes:workspace.originalBytes,spec:manifest,changes:workspace.changes});},
+  plan(){if(workspace.hasUnsupportedChanges)throw Error('人物演出或结构修改仅保留内存草稿，不支持写回；请撤销这些修改后再保存纯文字');return patch.plan({originalBytes:workspace.originalBytes,spec:manifest,changes:workspace.changes});},
   saved(bytes){baseline=makeRows(bytes);workspace.originalBytes=new Uint8Array(bytes);draft=copy(baseline);selectedId=draft[0].id;history.length=0;future.length=0;}
  };return workspace;
 }

@@ -21,7 +21,7 @@ function render(editor,preview){
  let undo,redo,reset,review,restore;
  if(view.editing){
   undo=button('撤销一步',()=>{w.undo();redraw();});redo=button('重做',()=>{w.redo();redraw();});reset=button('撤销未应用修改',()=>{w.discard();redraw();});
-  review=button('查看差异并应用',()=>{if(w.hasStructuralChanges)return;open(w);});restore=button('从备份恢复',()=>selectRestore(w));tools.append(undo,redo,reset,review,restore);
+  review=button('查看差异并应用',()=>{if(w.hasUnsupportedChanges)return;open(w);});restore=button('从备份恢复',()=>selectRestore(w));tools.append(undo,redo,reset,review,restore);
  }
  const status=el('p',undefined,'hint');status.setAttribute('role','status');editor.append(status);
  const script=el('div',undefined,'event-script');editor.append(script);
@@ -48,16 +48,41 @@ function render(editor,preview){
   }else row.append(el('p',line.text||'（空白对白）','event-script-text'));
   script.append(row);
  });
- if(view.editing)editor.append(el('p','新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情本阶段只读。','hint'));
+ if(view.editing)editor.append(el('p','新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情可在展开的演出面板中逐句编辑，仅保存在内存。','hint'));
  let previewKey=null,previewText=null;
  function updatePreview(){
   if(!view.previewOpen){preview.replaceChildren();return;}
   const line=w.lines[w.selectedIndex],key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
   if(key===previewKey&&previewText){previewText.textContent=line.text||'（空白对白）';return;}
   previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));
-  const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p','只读预览 · 人物及表情暂不可修改。图片仅从所选本地项目读取。','notice'));
+  const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p','图片仅从所选本地项目读取。人物演出修改仅保存在内存，不写回游戏。','notice'));
   if(!w.performance){stage.replaceChildren(el('p','立绘预览尚不可用，请重新连接本地游戏项目。','notice'));return;}
   const valid=()=>work()===w&&view.previewOpen&&view.renderToken===renderToken&&previewKey===key;
+  if(view.editing){
+   const settings=el('div',undefined,'event-performance-settings'),fields={};settings.setAttribute('aria-label','当前句人物演出设置');
+   for(const [key,label] of [['speaker','说话人'],['left','左侧立绘'],['right','右侧立绘'],['mood','表情']]){
+    const field=el('label',label,'field'),select=el('select');select.dataset.performanceField=key;select.setAttribute('aria-label',label);select.disabled=true;field.append(select);settings.append(field);fields[key]=select;
+   }
+   const note=el('p','正在读取真实人物及表情选项…','hint');settings.append(note);preview.append(settings);
+   // Move settings before portraits while retaining the existing preview and compact CSS.
+   preview.insertBefore(settings,stage);
+   if(!w.performance.choices)note.textContent='当前项目尚未提供人物映射选项，请重新读取项目。';
+   else Promise.resolve().then(()=>w.performance.choices(line)).then(options=>{
+    if(!valid())return;
+    for(const key of ['speaker','left','right','mood']){
+     const select=fields[key],values=key==='mood'?options.moods:['',...options.names];select.replaceChildren();
+     for(const value of values){const label=key==='mood'?(value==='shy'?'shy（害羞）':value):value||(key==='speaker'?'旁白':'无人');const option=el('option',label);option.value=value;select.append(option);}
+     if(!values.includes(line[key])){const option=el('option',line[key]+'（当前值，此配置未使用或不可用）');option.value=line[key];option.disabled=true;select.append(option);}
+     select.value=line[key];select.disabled=!!locked()||(key==='mood'&&!options.moodEnabled);
+     select.onchange=()=>{
+      if(!valid()||locked()||select.disabled)return;
+      if(!values.includes(select.value)){root.GCSProject.report('请选择当前项目支持的设置');return;}
+      w.setPerformance(w.selectedIndex,key,select.value);redraw();
+     };
+    }
+    note.textContent=options.moodEnabled?'表情仅作用于画面中的顾清寒；说话人与左右立绘分别设置。':'当前左右人物使用固定立绘，表情不参与显示；原表情值保留。';
+   }).catch(error=>{if(valid())note.textContent='无法读取真实候选：'+error.message;});
+  }
   Promise.resolve().then(()=>w.performance.load(line)).then(result=>{
    if(!valid())return;stage.replaceChildren();
    for(const side of ['left','right']){
@@ -74,8 +99,8 @@ function render(editor,preview){
  }
  function refresh(){
   const dirty=w.changes.length>0,isLocked=!!locked();
-  if(undo){undo.disabled=!w.canUndo||isLocked;redo.disabled=!w.canRedo||isLocked;reset.disabled=!dirty||isLocked;review.disabled=!dirty||w.hasStructuralChanges||isLocked||!s.handle;restore.disabled=dirty||isLocked||!s.handle;}
-  status.textContent=w.blocked?'自动恢复未完成：请检查备份恢复后重新读取。':w.hasStructuralChanges?'含结构修改 · 仅内存草稿，暂不可写回游戏。':dirty?'有未应用的文字草稿。':'共 '+w.lines.length+' 句真实对白。';
+  if(undo){undo.disabled=!w.canUndo||isLocked;redo.disabled=!w.canRedo||isLocked;reset.disabled=!dirty||isLocked;review.disabled=!dirty||w.hasUnsupportedChanges||isLocked||!s.handle;restore.disabled=dirty||isLocked||!s.handle;}
+  status.textContent=w.blocked?'自动恢复未完成：请检查备份恢复后重新读取。':w.hasUnsupportedChanges?'含人物演出或结构修改 · 仅内存草稿，暂不可写回游戏。':dirty?'有未应用的文字草稿。':'共 '+w.lines.length+' 句真实对白。';
   updatePreview();
  }
  refresh();
@@ -93,7 +118,7 @@ async function selectRestore(w){
  if(review&&valid(job))open(w,review);
 }
 function open(w,restoreReview=null){
- if(w.hasStructuralChanges)return;
+ if(w.hasUnsupportedChanges)return;
  const s=state();if(!s.handle||s.status!=='connected'||w.locked||w.blocked||s.workspace?.locked||busy)return;
  try{if(!restoreReview)w.plan();}catch(e){root.GCSProject.report('对白校验失败：'+e.message);return;}
  session={work:w,project:s.handle,cards:s.workspace,changes:restoreReview?restoreReview.changes:w.changes,restoreReview};const job=session;dialog.replaceChildren(el('h2',restoreReview?'从备份恢复 · 检查全部对白差异':'检查全部对白修改'),el('p',w.manifest.title+' / '+w.manifest.id+' → '+w.manifest.sourcePath,'record-id'));
@@ -102,8 +127,8 @@ function open(w,restoreReview=null){
  dialog.append(el('p',(restoreReview?'点击确认恢复后授权写入。恢复前的当前版本仅保留内存快照，失败时尝试安全回滚；若无法确认磁盘内容则停止，避免覆盖外部修改。':'先选择游戏项目外的目录并验证原文件备份，再点击授权写入。')+'浏览器无法消除最后检查与提交间的并发竞争；请先关闭游戏及正在编辑此源码的程序。'+(restoreReview?'所选备份不会被修改。':'备份按 restore.json 的 path 可人工恢复。'),'hint'));
  const backup=restoreReview?null:el('button','选择项目外目录并备份'),apply=el('button',restoreReview?'确认恢复':'授权写入并应用','primary'),close=el('button','关闭'),message=el('p',restoreReview?'差异已检查，确认后将请求写入授权。':'尚未备份');message.setAttribute('role','status');apply.disabled=!restoreReview;if(backup)dialog.append(backup);dialog.append(message,el('div',undefined,'dialog-actions'));dialog.lastChild.append(close,apply);
  function controls(){if(backup)backup.disabled=busy||job.done;apply.disabled=busy||(!restoreReview&&!job.token)||job.done||w.blocked;close.disabled=busy;}
- if(backup)backup.onclick=async()=>{if(busy||!valid(job))return;job.token=null;lock(job,true);controls();try{job.parent=await window.showDirectoryPicker({id:'gcs-event-backup',mode:'readwrite'});if(!valid(job))throw Error('项目连接已变化');job.token=await root.GCSEventWriter.prepare({project:job.project,backupParent:job.parent,originalBytes:w.originalBytes,entryBytes:w.entryBytes,changes:job.changes});message.textContent='备份已验证：'+job.parent.name+' / '+job.token.backupName+' / '+job.token.filename;}catch(e){message.textContent=e.name==='AbortError'?'已取消，原文件未写入。':e.message+(e.backupName?'；备份：'+job.parent.name+' / '+e.backupName:'');}finally{lock(job,false);controls();}};
- apply.onclick=async()=>{if(busy||job.done||!valid(job)||w.hasStructuralChanges||(!restoreReview&&!job.token)||w.blocked||(restoreReview?w.changes.length>0:JSON.stringify(w.changes)!==JSON.stringify(job.changes)))return;let authorization;try{authorization=job.project.requestPermission({mode:'readwrite'});}catch(e){message.textContent=e.message;return;}lock(job,true);controls();try{if(await authorization!=='granted')throw Error('未获得写入权限，原文件未修改');if(!valid(job))throw Error('项目连接已变化');if(restoreReview)job.token=await root.GCSEventWriter.prepareRestore(restoreReview);if(!valid(job))throw Error('项目连接已变化');const result=await root.GCSEventWriter.apply(job.token,{project:job.project,permissionGranted:true});w.saved(result.bytes);job.done=true;message.textContent=restoreReview?'对白恢复成功，当前对白已自动刷新，已逐字节读回并重新解析七句。所选备份：'+restoreReview.backupName:'对白应用成功，已逐字节读回并重新解析七句。备份：'+job.parent.name+' / '+result.backupName;change();}catch(e){if(e.recoveryNeeded)w.block();message.textContent=e.message+'；备份：'+(restoreReview?restoreReview.backupName:job.parent.name+' / '+job.token.backupName)+'；恢复路径：'+w.manifest.sourcePath;job.token=null;}finally{lock(job,false);controls();change();}};
+ if(backup)backup.onclick=async()=>{if(busy||!valid(job)||w.hasUnsupportedChanges||JSON.stringify(w.changes)!==JSON.stringify(job.changes))return;job.token=null;lock(job,true);controls();try{job.parent=await window.showDirectoryPicker({id:'gcs-event-backup',mode:'readwrite'});if(!valid(job))throw Error('项目连接已变化');job.token=await root.GCSEventWriter.prepare({project:job.project,backupParent:job.parent,originalBytes:w.originalBytes,entryBytes:w.entryBytes,changes:job.changes,workspace:w});message.textContent='备份已验证：'+job.parent.name+' / '+job.token.backupName+' / '+job.token.filename;}catch(e){message.textContent=e.name==='AbortError'?'已取消，原文件未写入。':e.message+(e.backupName?'；备份：'+job.parent.name+' / '+e.backupName:'');}finally{lock(job,false);controls();}};
+ apply.onclick=async()=>{if(busy||job.done||!valid(job)||w.hasUnsupportedChanges||(!restoreReview&&!job.token)||w.blocked||(restoreReview?w.changes.length>0:JSON.stringify(w.changes)!==JSON.stringify(job.changes)))return;let authorization;try{authorization=job.project.requestPermission({mode:'readwrite'});}catch(e){message.textContent=e.message;return;}lock(job,true);controls();try{if(await authorization!=='granted')throw Error('未获得写入权限，原文件未修改');if(!valid(job))throw Error('项目连接已变化');if(restoreReview)job.token=await root.GCSEventWriter.prepareRestore(restoreReview);if(!valid(job))throw Error('项目连接已变化');const result=await root.GCSEventWriter.apply(job.token,{project:job.project,permissionGranted:true});w.saved(result.bytes);job.done=true;message.textContent=restoreReview?'对白恢复成功，当前对白已自动刷新，已逐字节读回并重新解析七句。所选备份：'+restoreReview.backupName:'对白应用成功，已逐字节读回并重新解析七句。备份：'+job.parent.name+' / '+result.backupName;change();}catch(e){if(e.recoveryNeeded)w.block();message.textContent=e.message+'；备份：'+(restoreReview?restoreReview.backupName:job.parent.name+' / '+job.token.backupName)+'；恢复路径：'+w.manifest.sourcePath;job.token=null;}finally{lock(job,false);controls();change();}};
  close.onclick=()=>{if(!busy)dialog.close();};dialog.showModal();
 }
 dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{session=null;});window.addEventListener('gcs-project-change',()=>{if(session&&!busy&&!valid(session))dialog.close();});

@@ -44,14 +44,15 @@ async function prepareRestore(review,{backupParent,uuid}={}){
  const token=Object.freeze({backupName:review.backupName,filename:spec.sourcePath.split('/').at(-1),path:spec.sourcePath});
  jobs.set(token,{project:r.project,handle,entryHandle,before,entryBefore,after,restore:r,used:false});return token;
 }
-async function prepare({project,backupParent,originalBytes,entryBytes,changes,uuid=()=>crypto.randomUUID()}){
+async function prepare({project,backupParent,originalBytes,entryBytes,changes,workspace=null,uuid=()=>crypto.randomUUID()}){
  const spec=events.manifest,before=new Uint8Array(originalBytes),entryBefore=new Uint8Array(entryBytes);
  // Revalidate identity as well as every requested old value before any filesystem mutation.
  events.parse({[spec.sourcePath]:before,[spec.entryPath]:entryBefore});
  const after=patch.plan({originalBytes:before,spec,changes}).bytes;
+ const guard=()=>{if(!workspace)return;const planned=workspace.plan();if(!patch.equal(planned.bytes,after)||!patch.equal(workspace.originalBytes,before)||!patch.equal(workspace.entryBytes,entryBefore))throw Error('草稿或演出设置已变化，请重新审阅');};guard();
  if(!project||!backupParent||await project.resolve(backupParent)!==null)throw Error('备份目录必须在游戏项目之外');
  const handle=await events.locate(project,spec.sourcePath),entryHandle=await events.locate(project,spec.entryPath);
- async function check(){if(!patch.equal(await read(handle),before)||!patch.equal(await read(entryHandle),entryBefore))throw Error('磁盘源码或执行入口已变化，请保留草稿并重新读取');}
+ async function check(){guard();if(!patch.equal(await read(handle),before)||!patch.equal(await read(entryHandle),entryBefore))throw Error('磁盘源码或执行入口已变化，请保留草稿并重新读取');}
  await check();const backupName='gcs-event-backup-'+uuid();if(!/^gcs-event-backup-[a-zA-Z0-9-]+$/.test(backupName))throw Error('无效备份名称');
  try{await backupParent.getDirectoryHandle(backupName,{create:false});throw Error('备份目录重名，拒绝覆盖');}catch(e){if(e.name!=='NotFoundError')throw e;}
  try{
@@ -59,13 +60,13 @@ async function prepare({project,backupParent,originalBytes,entryBytes,changes,uu
   await writeVerified(backupFile,before);
   const note=new TextEncoder().encode(JSON.stringify({format:'gcs-event-backup-v1',eventId:spec.id,path:spec.sourcePath,file:filename,originalSize:before.length,modifiedLines:changes.map(c=>c.index+1)},null,2));
   await writeVerified(await dir.getFileHandle('restore.json',{create:true}),note);await check();
-  const token=Object.freeze({backupName,filename,path:spec.sourcePath});jobs.set(token,{project,handle,entryHandle,before,entryBefore,after,backupFile,used:false});return token;
+  const token=Object.freeze({backupName,filename,path:spec.sourcePath});jobs.set(token,{project,handle,entryHandle,before,entryBefore,after,backupFile,guard,used:false});return token;
  }catch(e){throw Object.assign(Error('备份未完成，游戏原文件未写入：'+e.message),{backupName});}
 }
 async function apply(token,{project,permissionGranted=false}={}){
  const job=jobs.get(token);if(!job||job.used||job.project!==project)throw Error('对白确认已失效，请重新审阅');if(!permissionGranted)throw Error('未获得用户写入授权');job.used=true;
  let stream,attempted=false;
- async function check(){if(job.restore)await verifyRestore(job.restore);if(!patch.equal(await read(job.handle),job.before)||!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('磁盘源码或执行入口已变化，已停止覆盖');if(job.backupFile&&!patch.equal(await read(job.backupFile),job.before))throw Error('备份内容已变化');}
+ async function check(){job.guard?.();if(job.restore)await verifyRestore(job.restore);if(!patch.equal(await read(job.handle),job.before)||!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('磁盘源码或执行入口已变化，已停止覆盖');if(job.backupFile&&!patch.equal(await read(job.backupFile),job.before))throw Error('备份内容已变化');}
  try{
   await check();stream=await job.handle.createWritable({mode:'exclusive'});await stream.write(job.after);await check();attempted=true;await stream.close();
   const disk=await read(job.handle);if(!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('写后执行入口已变化');if(!patch.equal(disk,job.after))throw Error('写入后读回校验失败');patch.readLinear(disk,events.manifest);

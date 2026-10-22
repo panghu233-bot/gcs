@@ -54,10 +54,19 @@
 @media(max-width:1000px){.workspace.event-workspace.event-preview-open > #preview{grid-column:3}}
 
 /* Selected-line local portrait preview; event-only, no changes to NPC/card panels. */
-.workspace.event-workspace.event-preview-open > #preview{min-width:0}
-.event-performance-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start;min-height:190px}
+.workspace.event-workspace.event-preview-open > #preview{min-width:0;padding-top:12px;padding-bottom:12px}
+.event-performance-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start;min-height:0}
 .event-performance-side{min-width:0;text-align:center}
 .event-performance-side img{display:block;width:100%;height:260px;object-fit:contain;object-position:center bottom}
 .event-performance-caption,.event-performance-speaker{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
-.event-performance-side .hint{font-size:11px}
+.event-performance-side .hint{font-size:11px;margin:6px 0 0}
 .workspace.event-workspace [role=button]{cursor:pointer}
+
+/* Compact preview spacing without reducing portrait size or overlapping dialogue. */
+.workspace.event-workspace.event-preview-open > #preview > .preview-label{margin-bottom:6px}
+.event-performance-speaker{margin:0 0 8px}
+.event-performance-caption{margin:0 0 6px}
+.workspace.event-workspace.event-preview-open > #preview > .event-text{margin:10px 0 0}
+
+/* Read-only in reading mode; per-line performance controls in editing mode. */
+.event-performance-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin:8px 0 10px}.event-performance-settings .field{margin:0;min-width:0}.event-performance-settings select{width:100%;min-width:0;font-size:11px;padding:5px}.event-performance-settings>.hint{grid-column:1 / -1;margin:0}

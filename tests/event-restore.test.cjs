@@ -11,6 +11,7 @@ const fsNode=require('node:fs'),vm=require('node:vm');
 class Element {
  constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.listeners={};this.disabled=false;this.textContent='';}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=nodes;}get lastChild(){return this.children.at(-1);}
+ insertBefore(node,before){this.children=this.children.filter(n=>n!==node);const i=this.children.indexOf(before);if(i<0)throw Error('Unknown insertion reference');this.children.splice(i,0,node);}
  setAttribute(k,v){this[k]=v;}addEventListener(k,fn){this.listeners[k]=fn;}showModal(){this.open=true;}close(){this.open=false;this.listeners.close?.();}
 }
 function descendants(n){return [n,...n.children.flatMap(descendants)];}
