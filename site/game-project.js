@@ -1,8 +1,8 @@
 /* Folder transport is independent of the game schema. Only adapter-declared files are read. */
 (function(root){
  'use strict';
- function createProject({adapter,store,notify=()=>{},createWorkspace=null,parseJSON=JSON.parse,npcReader=null}){
-  let revision=0,queue=Promise.resolve(),state={status:'disconnected',name:'',records:[],branches:null,handle:null,message:'未连接游戏项目 · 当前展示演示数据',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null};
+ function createProject({adapter,store,notify=()=>{},createWorkspace=null,parseJSON=JSON.parse,npcReader=null,eventReader=null}){
+  let revision=0,queue=Promise.resolve(),state={status:'disconnected',name:'',records:[],branches:null,handle:null,message:'未连接游戏项目 · 当前展示演示数据',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,eventWorkspace:null,eventError:''};
   const connected=()=>state.branches!==null;
   const emit=(kind='connection')=>notify({...state,connected:connected()},kind);
   const update=patch=>{state={...state,...patch};emit();};
@@ -21,6 +21,7 @@
    try{const result=await loader();return {npcRecords:result.records,npcError:'',npcRelease:result.release||null,npcUpdate:result.updatePortrait||null};}
    catch(e){return {npcRecords:[],npcError:e.message,npcRelease:null,npcUpdate:null};}
   }
+  async function eventSnapshot(loader){if(!eventReader)return {eventWorkspace:null,eventError:''};try{return {eventWorkspace:await loader(),eventError:''};}catch(e){return {eventWorkspace:null,eventError:e.message};}}
   async function fromHandle(handle){
    const files={};
    for(const [key,path] of Object.entries(adapter.projectFiles)) {
@@ -28,7 +29,7 @@
     try {for(const segment of segments.slice(0,-1))directory=await directory.getDirectoryHandle(segment,{create:false});files[key]=await (await directory.getFileHandle(segments.at(-1),{create:false})).getFile();}
     catch(e){if(e.name==='NotFoundError')throw new Error('所选项目缺少 '+path+'，请选择游戏根文件夹');throw e;}
    }
-   const cards=await parse(files);return {...cards,...await npcSnapshot(()=>npcReader.fromHandle(handle))};
+   const cards=await parse(files);return {...cards,...await npcSnapshot(()=>npcReader.fromHandle(handle)),...await eventSnapshot(()=>eventReader.fromHandle(handle))};
   }
   function fail(error){update({status:connected()?'connected':state.handle?'permission':'error',message:'连接失败：'+error.message+(connected()?'；保留上次已加载数据':'；当前展示演示数据')});}
   async function accept(handle,ticket){
@@ -37,7 +38,7 @@
    try{await save(handle,ticket);}catch {if(ticket===revision)update({message:'已连接 · 浏览器无法记住文件夹，下次需重新选择'});}
   }
   async function open(pick){
-   if(state.workspace?.locked)return;
+   if(state.workspace?.locked||state.eventWorkspace?.locked)return;
    const ticket=++revision;
    try {const pending=pick({id:'gcs-game-project',mode:'read'});update({status:'loading',message:'等待选择游戏根文件夹…'});const handle=await pending;if(ticket!==revision)return;update({message:'正在读取卡牌与养成人物…'});await accept(handle,ticket);}
    catch(e){if(ticket!==revision)return;if(e.name==='AbortError')update({status:connected()?'connected':state.handle?'permission':'disconnected',message:connected()?'已取消选择 · 保留当前项目':state.handle?'已取消选择 · 可重新授权已记住的文件夹':'已取消选择 · 当前展示演示数据'});else fail(e);}
@@ -55,22 +56,22 @@
    catch(e){if(ticket===revision)update({status:'permission',message:'授权未完成：'+e.message});}
   }
   async function refresh(){
-   if(state.workspace?.locked)return;
+   if(state.workspace?.locked||state.eventWorkspace?.locked)return;
    if(!state.handle){update({message:'请重新选择文件夹以读取最新内容'});return;}
    const ticket=++revision,handle=state.handle;update({status:'loading',message:'正在重新读取项目…'});
-   try{const permission=await handle.queryPermission({mode:'read'});if(ticket!==revision)return;if(permission!=='granted'){state.npcRelease?.();update({records:[],branches:null,workspace:null,documents:null,originalBytes:null,npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'permission',message:'文件夹权限已失效 · 请一键重新授权'});return;}await accept(handle,ticket);}catch(e){if(ticket===revision)fail(e);}
+   try{const permission=await handle.queryPermission({mode:'read'});if(ticket!==revision)return;if(permission!=='granted'){state.npcRelease?.();update({eventWorkspace:null,eventError:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'permission',message:'文件夹权限已失效 · 请一键重新授权'});return;}await accept(handle,ticket);}catch(e){if(ticket===revision)fail(e);}
   }
   async function openFiles(fileList){
-   if(state.workspace?.locked)return;
+   if(state.workspace?.locked||state.eventWorkspace?.locked)return;
    const ticket=++revision;update({status:'loading',message:'正在识别所选项目文件夹…'});
    try{const files={},list=Array.from(fileList);for(const [key,path] of Object.entries(adapter.projectFiles)){
     const found=list.filter(f=>f.webkitRelativePath.split('/').slice(1).join('/')===path);if(found.length!==1)throw new Error('所选根文件夹缺少 '+path);files[key]=found[0];
-   }const cards=await parse(files),snapshot={...cards,...await npcSnapshot(()=>npcReader.fromFileList(list))};if(ticket!==revision){snapshot.npcRelease?.();return;}
+   }const cards=await parse(files),snapshot={...cards,...await npcSnapshot(()=>npcReader.fromFileList(list)),...await eventSnapshot(()=>eventReader.fromFileList(list))};if(ticket!==revision){snapshot.npcRelease?.();return;}
    state.npcRelease?.();update({...snapshot,handle:null,name:list[0]?.webkitRelativePath.split('/')[0] || '本地项目',status:'connected',message:'已连接 · 当前浏览器需在下次打开时重新选择文件夹'});
    try{await save(null,ticket);}catch { /* in-memory connection still works */ }
    }catch(e){if(ticket===revision)fail(e);}
   }
-  async function disconnect(){if(state.workspace?.locked)return;const ticket=++revision;state.npcRelease?.();update({npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'disconnected',name:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,handle:null,message:'已断开游戏项目 · 当前展示演示数据'});try{await save(null,ticket);}catch{if(ticket===revision)update({message:'已断开；浏览器未能清除记忆，请在网站设置中清除本地存储'});}}
+  async function disconnect(){if(state.workspace?.locked||state.eventWorkspace?.locked)return;const ticket=++revision;state.npcRelease?.();update({eventWorkspace:null,eventError:'',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'disconnected',name:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,handle:null,message:'已断开游戏项目 · 当前展示演示数据'});try{await save(null,ticket);}catch{if(ticket===revision)update({message:'已断开；浏览器未能清除记忆，请在网站设置中清除本地存储'});}}
   function applied(originalBytes){state.originalBytes=originalBytes;state.documents=state.workspace?.documents;state.workspace?.markSaved();update({message:'修改已应用 · 备份已验证'});}
   function portraitApplied(handle,records,path,bytes){if(state.handle!==handle||state.npcRecords!==records||!state.npcUpdate)throw Error('项目连接已变化，请重新读取');state.npcUpdate(path,bytes);emit('portrait');}
   return {portraitApplied,getState:()=>({...state,records:state.workspace?state.workspace.records:state.records,branches:state.workspace?state.workspace.branches:state.branches,connected:connected()}),applied,report:message=>update({message}),open,openFiles,restore,authorize,refresh,disconnect};
@@ -90,14 +91,14 @@
  }
  const api={createProject,browserStore};if(typeof module!=='undefined')module.exports=api;
  if(typeof window!=='undefined'){
-  const project=createProject({adapter:root.GCSNingguAdapter,npcReader:root.GCSNPCProject,store:browserStore(),createWorkspace:root.GCSCardWorkspace.createWorkspace,parseJSON:root.GCSCardWorkspace.parseJSON,notify:(state,kind)=>window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind}}))});root.GCSProject=project;
+  const project=createProject({adapter:root.GCSNingguAdapter,eventReader:root.GCSEventProject,npcReader:root.GCSNPCProject,store:browserStore(),createWorkspace:root.GCSCardWorkspace.createWorkspace,parseJSON:root.GCSCardWorkspace.parseJSON,notify:(state,kind)=>window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind}}))});root.GCSProject=project;
   const $=id=>document.getElementById(id);
-  function controls(){const s=project.getState(),busy=['loading','restoring'].includes(s.status) || !!s.workspace?.locked;const w=s.workspace,changes=w?.changes || [],modified=new Set(changes.map(c=>c.cardId)).size;const message=changes.length && s.message.startsWith('修改已应用')?'已连接 · 编辑仅在内存':s.message;$('project-status').textContent=(s.name?s.name+' · ':'')+message+(changes.length?' · '+modified+' 张卡 / '+changes.length+' 个字段未应用':'')+(w?.invalid.length?' · '+w.invalid.length+' 处输入待修正':'');$('project-open').disabled=busy;$('project-authorize').hidden=s.status!=='permission';$('project-refresh').hidden=!s.connected || !s.handle;$('project-refresh').disabled=busy;$('project-disconnect').hidden=!s.handle&&!s.connected;$('project-disconnect').disabled=busy;$('project-open').textContent=s.connected?'切换游戏项目':'打开游戏项目';}
+  function controls(){const s=project.getState(),busy=['loading','restoring'].includes(s.status) || !!s.workspace?.locked || !!s.eventWorkspace?.locked;const w=s.workspace,changes=w?.changes || [],modified=new Set(changes.map(c=>c.cardId)).size;const message=changes.length && s.message.startsWith('修改已应用')?'已连接 · 编辑仅在内存':s.message;$('project-status').textContent=(s.name?s.name+' · ':'')+message+(changes.length?' · '+modified+' 张卡 / '+changes.length+' 个字段未应用':'')+(s.eventWorkspace?.changes.length?' · '+s.eventWorkspace.changes.length+' 句对白未应用':'')+(w?.invalid.length?' · '+w.invalid.length+' 处输入待修正':'');$('project-open').disabled=busy;$('project-authorize').hidden=s.status!=='permission';$('project-refresh').hidden=!s.connected || !s.handle;$('project-refresh').disabled=busy;$('project-disconnect').hidden=!s.handle&&!s.connected;$('project-disconnect').disabled=busy;$('project-open').textContent=s.connected?'切换游戏项目':'打开游戏项目';}
   window.addEventListener('gcs-project-change',controls);
-  const canDiscard=()=>(!project.getState().workspace?.changes.length && !project.getState().workspace?.invalid.length) || window.confirm('还有未应用的卡牌修改。继续会丢弃这些内存修改，是否继续？');
+  const canDiscard=()=>(!project.getState().workspace?.changes.length && !project.getState().workspace?.invalid.length && !project.getState().eventWorkspace?.changes.length) || window.confirm('还有未应用的卡牌或对白修改。继续会丢弃这些内存修改，是否继续？');
   $('project-open').onclick=()=>{if(!canDiscard())return;if(typeof window.showDirectoryPicker==='function')project.open(options=>window.showDirectoryPicker(options));else{$('project-folder').value='';$('project-folder').click();}};
   $('project-folder').onchange=e=>{if(e.target.files.length)project.openFiles(e.target.files);};$('project-authorize').onclick=()=>project.authorize();$('project-refresh').onclick=()=>{if(canDiscard())project.refresh();};$('project-disconnect').onclick=()=>{if(canDiscard())project.disconnect();};
-  window.addEventListener('beforeunload',event=>{const w=project.getState().workspace;if(w?.changes.length || w?.invalid.length){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{const s=project.getState(),w=s.workspace;if(w?.changes.length || w?.invalid.length || s.eventWorkspace?.changes.length){event.preventDefault();event.returnValue='';}});
   controls();project.restore();
  }
 })(typeof window!=='undefined'?window:globalThis);

@@ -1,3 +1,17 @@
+# GCS 0.7.0 · 指日可待真实对白编辑
+
+连接《凝顾》根目录后，「剧情事件」仅接入 day12_countdown。定向读取 cultivation_data.gd 的 Day12CountdownEvent.create_lines()，并核对 cultivation_calendar_rest_flow.gd 的实际执行入口，展示七句真实对白。中栏可同时编辑多句，右栏同步预览；支持撤销一步、撤销全部和集中查看完整前后差异。事件结构、说话人、表情、顺序、入口及结算不开放修改。
+
+保存使用独立的 GDScript 字符串补丁，只替换已授权对白的字符串标记，保留其余原始字节（含 BOM、换行、注释与无关内容）。先由用户选择项目外目录并逐字节验证备份和 restore.json，再主动点击「授权写入并应用」请求项目写权限。提交前复查源码、入口与备份，暂存后再检查冲突，写后逐字节读回并重新解析七句。普通失败尝试恢复原文；外部内容变化时停止覆盖，恢复不完整时锁定事件写入并显示备份与人工恢复路径。不自动重试。
+
+重新读取、切换、断开或关闭前提示未应用草稿；草稿仅在内存，不上传，也不进入演示 JSON。兼容文件列表模式支持读取和编辑，直接写回需使用支持目录访问 API 的 Chrome / Edge。卡牌编辑与 NPC 立绘模块保持独立。
+
+本轮新增 event-project.js、gdscript-string-patch.js、event-writer.js、event-studio.js；接线涉及 game-project.js、app.js、index.html、styles.css 和 Pages 语法检查。新增 event.test.cjs、event-integration.test.cjs、helpers/synthetic-event.cjs，仅以合成 GDScript 与内存模拟文件系统验证自动写入。通过 86 项快速测试、全部网页 JS 语法检查及真实项目只读七句解析。未自动写入游戏源码；浏览器界面、原生目录授权和真实首次写回待人工测试。
+
+操作：打开网站 → 打开游戏项目并选择 ninggu-2 → 剧情事件 → 修改若干句 → 查看差异并应用 → 选择项目外目录并备份 → 授权写入并应用。成功后检查右侧对白，可点击重新读取复核。人工恢复时，关闭相关编辑器，按备份 restore.json 的 path 将原文件放回，再重新读取项目。未应用草稿请在刷新前自行保留。
+
+---
+
 # Game Content Studio (GCS) 0.6.0
 
 网站：https://panghu233-bot.github.io/gcs/

@@ -9,6 +9,7 @@
   try { const stored = localStorage.getItem(key); if(stored) { data = M.validate(JSON.parse(stored)); selected = data.npcs[0]?.id || ''; loadMessage = '已恢复上次的本地工作区'; } } catch { loadMessage = '本地暂存不可用或格式异常；已载入演示。请用 JSON 备份。'; }
   const meta = {npcs:['NPC 人物','CHARACTERS','人物'], events:['剧情事件','STORY EVENTS','事件'], cards:['卡牌设计','CARD LIBRARY','卡牌']};
   const realCards = () => module==='cards' && window.GCSProject.getState().connected;
+  const realEvents = () => module==='events' && window.GCSProject.getState().connected;
   const realNPCs = () => module==='npcs' && window.GCSProject.getState().connected;
   const npcRecords = () => window.GCSProject.getState().npcRecords || [];
   const current = () => (realNPCs()?npcRecords():data[module]).find(x=>x.id===selected);
@@ -30,12 +31,13 @@
   function go(g,id) { if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
+    $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=window.GCSProject.getState().connected?(window.GCSProject.getState().eventWorkspace?1:0):data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
-    $('#add-btn').hidden=realCards()||realNPCs();
-    $('.library-foot').textContent=realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 立绘可替换 · 资料只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
+    $('#add-btn').hidden=realCards()||realNPCs()||realEvents();
+    $('.library-foot').textContent=realEvents()?'真实事件 · 对白内存编辑':realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 立绘可替换 · 资料只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
     const connection=window.GCSProject.getState();
-    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 立绘可替换 · 剧情演示':data.project.name+' / 演示项目';
+    $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 立绘可替换 · 真实对白编辑':data.project.name+' / 演示项目';
+    if(realEvents()){window.GCSEventStudio.renderList(query);return;}
     if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
     if(realNPCs()){
       const all=npcRecords(),hits=all.filter(x=>(x.name+' '+x.portraitRef+' '+x.sources.join(' ')).toLowerCase().includes(query.toLowerCase()));
@@ -49,6 +51,7 @@
     if(module==='cards')$('#library-en').textContent='DEMO / 未连接游戏项目';
   }
   function render() {
+    if(realEvents()){renderList();window.GCSEventStudio.render($('#editor'),$('#preview'));return;}
     if(realNPCs()){
       const state=window.GCSProject.getState();
       if(!npcRecords().some(n=>n.id===selected))selected=npcRecords()[0]?.id||'';
@@ -96,7 +99,7 @@
   function changed(full=false) { persist(); if(realCards()){render();return;} renderList(); if(full)renderEditor(); else if($('#record-heading'))$('#record-heading').textContent=label(current()); renderPreview(); }
   function mutate(callback) { callback(); changed(true); }
   function newRecord() {
-    if(realCards()||realNPCs())return;
+    if(realCards()||realNPCs()||realEvents())return;
     const id=module.slice(0,-1)+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);
     const x=module==='npcs'?{id,name:'新人物',role:'待设定',tags:'',bio:'',image:'',color:'#9aacf0'}:module==='events'?{id,title:'新事件',summary:'',participants:[],dialogues:[],choices:[]}:{id,name:'新卡牌',kind:'技能',rarity:'普通',cost:1,power:0,description:'',owner:'',source:'',upgrades:[],image:'',color:'#9aacf0'};
     data[module].push(x);selected=id;query='';$('#search').value='';persist();render();toast('已新建'+meta[module][2]);
@@ -109,6 +112,7 @@
     if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);if(realNPCs())render();else{renderEditor();renderPreview();}return;}
     if(realNPCs()&&a==='npc-portrait-replace'){window.GCSNPCPortraitController.open(x,window.GCSNPCStudio.selectedPortrait(x));return;}
     if(realNPCs()&&a==='npc-portrait-select'){window.GCSNPCStudio.selectRealPortrait(x,i);render();return;}
+    if(realEvents())return;
     if(realNPCs()&&a!=='select')return;
     if(module==='npcs' && a==='npc-go-portrait'){window.GCSNPCStudio.setTab('portrait');renderEditor();return;}
     if(module==='npcs' && a==='npc-event-add'){
@@ -145,7 +149,7 @@
     if(a==='read'){readState={event:x.id,index:0};renderReader();$('#reader').showModal();}
   });
   function applyField(t) {
-    if(realCards()||realNPCs())return;
+    if(realCards()||realNPCs()||realEvents())return;
     const x=current();if(!x)return;
     if(module==='npcs' && t.dataset.npcField){
       const k=t.dataset.npcField;
@@ -161,7 +165,7 @@
   }
   $('#editor').addEventListener('input',e=>{if(e.target.tagName!=='SELECT'&&e.target.type!=='checkbox')applyField(e.target);});
   $('#editor').addEventListener('change',e=>{
-    if(realCards()||realNPCs())return;
+    if(realCards()||realNPCs()||realEvents())return;
     const t=e.target,x=current();
     if(module==='npcs' && t.dataset.npcField && (t.tagName==='SELECT'||t.type==='checkbox')){applyField(t);return;}
     if(t.tagName==='SELECT' && t.dataset.upgrade===undefined)applyField(t);
@@ -169,7 +173,7 @@
     if(t.dataset.upgrade!==undefined){if(!t.value){mutate(()=>x.upgrades.splice(Number(t.dataset.upgrade),1));}else checkUpgrade(()=>x.upgrades[Number(t.dataset.upgrade)]=t.value);}
   });
   $('#editor').addEventListener('focusout',e=>{
-    if(realCards()||realNPCs())return;
+    if(realCards()||realNPCs()||realEvents())return;
     const t=e.target;
     if(t.dataset.bind==='name'||t.dataset.bind==='title'){if(!t.value.trim()){t.value='未命名'+meta[module][2];applyField(t);toast('名称不能为空，已设为“'+t.value+'”');}}
     if(t.type==='number'&&(!t.validity.valid||t.value==='')){t.value=current()[t.dataset.bind];toast('请输入 0～999 的整数；已保留上次有效数值。');}

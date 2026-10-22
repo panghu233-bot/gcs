@@ -40,6 +40,10 @@ jobs:
           node --check site/npc-project.js
           node --check site/npc-portrait-writer.js
           node --check site/npc-portrait-controller.js
+          node --check site/gdscript-string-patch.js
+          node --check site/event-project.js
+          node --check site/event-writer.js
+          node --check site/event-studio.js
       - name: Stage current website
         run: |
           mkdir -p _site
