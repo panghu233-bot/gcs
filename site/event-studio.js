@@ -9,13 +9,15 @@ const viewStates=new WeakMap();
 function render(editor,preview){
  editor.replaceChildren();preview.replaceChildren();const s=state(),w=work();
  if(!s.connected||!w){editor.append(el('h2',s.connected?'真实事件暂不可用':'连接游戏项目以读取真实事件'),el('p',s.eventError||'选择《凝顾》根目录后读取已映射事件。此页不再展示演示剧情。','notice'));return;}
- let view=viewStates.get(w);if(!view){view={editing:false};viewStates.set(w,view);}
+ let view=viewStates.get(w);if(!view){view={editing:false,previewOpen:false,renderToken:0};viewStates.set(w,view);}
+ const renderToken=++view.renderToken;
  const locked=()=>w.locked||w.blocked||state().workspace?.locked;
  const heading=el('div',undefined,'editor-heading'),title=el('div');title.append(el('div',view.editing?'编辑模式 · 内存草稿':'阅读模式','breadcrumb'),el('h2',w.manifest.title));heading.append(title);editor.append(heading);
  function button(text,fn){const b=el('button',text);b.disabled=!!locked();b.onclick=()=>{if(locked())return;try{return fn();}catch(e){root.GCSProject.report(e.message);}};return b;}
  function redraw(focus=false){render(editor,preview);renderList($('search')?.value||'');change();if(focus)editor.querySelector?.('textarea')?.focus();}
  const tools=el('div',undefined,'card-edit-tools');editor.append(tools);
  tools.append(button(view.editing?'完成编辑':'编辑剧本',()=>{view.editing=!view.editing;redraw();}));
+ const previewToggle=button('演出预览',()=>{view.previewOpen=!view.previewOpen;redraw();});previewToggle.setAttribute('aria-expanded',String(view.previewOpen));previewToggle.setAttribute('aria-controls','preview');tools.append(previewToggle);
  let undo,redo,reset,review,restore;
  if(view.editing){
   undo=button('撤销一步',()=>{w.undo();redraw();});redo=button('重做',()=>{w.redo();redraw();});reset=button('撤销未应用修改',()=>{w.discard();redraw();});
@@ -25,12 +27,16 @@ function render(editor,preview){
  const script=el('div',undefined,'event-script');editor.append(script);
  const current=w.lines;
  current.forEach((line,index)=>{
-  const selected=view.editing&&w.selectedIndex===index;
+  const selected=w.selectedIndex===index;
   // Use a non-button container for the active row so its inputs and buttons remain independent.
   const row=el(view.editing&&!selected?'button':'article',undefined,'event-script-row'+(selected?' selected':''));
   row.append(el('span',(index+1)+'. '+line.speaker,'event-script-speaker'));
-  if(view.editing&&!selected){row.type='button';row.disabled=!!locked();row.setAttribute('aria-pressed','false');row.onclick=()=>{if(locked())return;w.select(index);redraw(true);};}
-  if(selected){
+  if(!view.editing||!selected){
+   if(view.editing){row.type='button';row.disabled=!!locked();}else{row.setAttribute('role','button');row.setAttribute('tabindex','0');}
+   row.setAttribute('aria-pressed',String(selected));row.onclick=()=>{if(locked()||w.selectedIndex===index)return;w.select(index);redraw(view.editing);};
+   if(!view.editing)row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();row.onclick();}};
+  }
+  if(view.editing&&selected){
    const caption=el('label','对白文字','field event-inline-field'),input=el('textarea');input.value=line.text;input.maxLength=20000;input.dataset.eventLine=String(index);input.setAttribute('aria-label','第 '+(index+1)+' 句对白');input.disabled=!!locked();
    // Keep this input node and its value/selection untouched while updating the draft and preview.
    input.oninput=()=>{try{w.set(index,input.value);refresh();renderList($('search')?.value||'');change('event-input');}catch(e){status.textContent=e.message;}};
@@ -43,12 +49,34 @@ function render(editor,preview){
   script.append(row);
  });
  if(view.editing)editor.append(el('p','新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情本阶段只读。','hint'));
- const lines=el('div');preview.append(el('div','当前剧本 · '+current.length+' 句','preview-label'),lines,el('p','草稿仅在本页内存中，刷新或关闭会丢失。结构修改本阶段不支持写回游戏。','notice'));
+ let previewKey=null,previewText=null;
+ function updatePreview(){
+  if(!view.previewOpen){preview.replaceChildren();return;}
+  const line=w.lines[w.selectedIndex],key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
+  if(key===previewKey&&previewText){previewText.textContent=line.text||'（空白对白）';return;}
+  previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));
+  const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p','只读预览 · 人物及表情暂不可修改。图片仅从所选本地项目读取。','notice'));
+  if(!w.performance){stage.replaceChildren(el('p','立绘预览尚不可用，请重新连接本地游戏项目。','notice'));return;}
+  const valid=()=>work()===w&&view.previewOpen&&view.renderToken===renderToken&&previewKey===key;
+  Promise.resolve().then(()=>w.performance.load(line)).then(result=>{
+   if(!valid())return;stage.replaceChildren();
+   for(const side of ['left','right']){
+    const portrait=result[side],cell=el('div',undefined,'event-performance-side');cell.dataset.side=side;
+    cell.append(el('p',(side==='left'?'左侧':'右侧')+'：'+(portrait.name||'无人'),'event-performance-caption'));
+    if(portrait.image){
+     const image=el('img');image.src=portrait.image;image.alt=portrait.name+' · '+portrait.mood;image.dataset.resourcePath=portrait.path;image.onerror=()=>{image.hidden=true;cell.append(el('p','立绘图片无法解码，请检查本地文件。','notice'));};cell.append(image);
+     cell.append(el('p','表情：'+portrait.mood+(portrait.mood==='shy'?'（害羞）':'')+(portrait.fixed?' · 固定立绘':''),'hint'));
+    }
+    if(portrait.warning||portrait.error)cell.append(el('p',portrait.warning||portrait.error,'notice'));
+    stage.append(cell);
+   }
+  }).catch(error=>{if(valid())stage.replaceChildren(el('p','演出预览不可用：'+error.message,'notice'));});
+ }
  function refresh(){
   const dirty=w.changes.length>0,isLocked=!!locked();
   if(undo){undo.disabled=!w.canUndo||isLocked;redo.disabled=!w.canRedo||isLocked;reset.disabled=!dirty||isLocked;review.disabled=!dirty||w.hasStructuralChanges||isLocked||!s.handle;restore.disabled=dirty||isLocked||!s.handle;}
   status.textContent=w.blocked?'自动恢复未完成：请检查备份恢复后重新读取。':w.hasStructuralChanges?'含结构修改 · 仅内存草稿，暂不可写回游戏。':dirty?'有未应用的文字草稿。':'共 '+w.lines.length+' 句真实对白。';
-  lines.replaceChildren();w.lines.forEach((l,i)=>{lines.append(el('strong',(i+1)+'. '+l.speaker),el('pre',l.text||'（空白对白）','event-text'));});
+  updatePreview();
  }
  refresh();
 }
@@ -79,5 +107,5 @@ function open(w,restoreReview=null){
  close.onclick=()=>{if(!busy)dialog.close();};dialog.showModal();
 }
 dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{session=null;});window.addEventListener('gcs-project-change',()=>{if(session&&!busy&&!valid(session))dialog.close();});
-root.GCSEventStudio={renderList,render};
+root.GCSEventStudio={renderList,render,isPreviewOpen:w=>!!viewStates.get(w)?.previewOpen};
 })(window);

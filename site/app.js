@@ -52,6 +52,7 @@
   }
   function syncWorkspaceLayout() {
     $('.workspace').classList.toggle('event-workspace',realEvents());
+    $('.workspace').classList.toggle('event-preview-open',realEvents()&&window.GCSEventStudio.isPreviewOpen(window.GCSProject.getState().eventWorkspace));
   }
   function render() {
     syncWorkspaceLayout();

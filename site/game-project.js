@@ -33,8 +33,8 @@
   }
   function fail(error){update({status:connected()?'connected':state.handle?'permission':'error',message:'连接失败：'+error.message+(connected()?'；保留上次已加载数据':'；当前展示演示数据')});}
   async function accept(handle,ticket){
-   const snapshot=await fromHandle(handle);if(ticket!==revision){snapshot.npcRelease?.();return;}
-   state.npcRelease?.();update({...snapshot,handle,name:handle.name,status:'connected',message:'已连接 · 编辑仅在内存'});
+   const snapshot=await fromHandle(handle);if(ticket!==revision){snapshot.npcRelease?.();snapshot.eventWorkspace?.release?.();return;}
+   state.npcRelease?.();state.eventWorkspace?.release?.();update({...snapshot,handle,name:handle.name,status:'connected',message:'已连接 · 编辑仅在内存'});
    try{await save(handle,ticket);}catch {if(ticket===revision)update({message:'已连接 · 浏览器无法记住文件夹，下次需重新选择'});}
   }
   async function open(pick){
@@ -59,19 +59,19 @@
    if(state.workspace?.locked||state.eventWorkspace?.locked)return;
    if(!state.handle){update({message:'请重新选择文件夹以读取最新内容'});return;}
    const ticket=++revision,handle=state.handle;update({status:'loading',message:'正在重新读取项目…'});
-   try{const permission=await handle.queryPermission({mode:'read'});if(ticket!==revision)return;if(permission!=='granted'){state.npcRelease?.();update({eventWorkspace:null,eventError:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'permission',message:'文件夹权限已失效 · 请一键重新授权'});return;}await accept(handle,ticket);}catch(e){if(ticket===revision)fail(e);}
+   try{const permission=await handle.queryPermission({mode:'read'});if(ticket!==revision)return;if(permission!=='granted'){state.npcRelease?.();state.eventWorkspace?.release?.();update({eventWorkspace:null,eventError:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'permission',message:'文件夹权限已失效 · 请一键重新授权'});return;}await accept(handle,ticket);}catch(e){if(ticket===revision)fail(e);}
   }
   async function openFiles(fileList){
    if(state.workspace?.locked||state.eventWorkspace?.locked)return;
    const ticket=++revision;update({status:'loading',message:'正在识别所选项目文件夹…'});
    try{const files={},list=Array.from(fileList);for(const [key,path] of Object.entries(adapter.projectFiles)){
     const found=list.filter(f=>f.webkitRelativePath.split('/').slice(1).join('/')===path);if(found.length!==1)throw new Error('所选根文件夹缺少 '+path);files[key]=found[0];
-   }const cards=await parse(files),snapshot={...cards,...await npcSnapshot(()=>npcReader.fromFileList(list)),...await eventSnapshot(()=>eventReader.fromFileList(list))};if(ticket!==revision){snapshot.npcRelease?.();return;}
-   state.npcRelease?.();update({...snapshot,handle:null,name:list[0]?.webkitRelativePath.split('/')[0] || '本地项目',status:'connected',message:'已连接 · 当前浏览器需在下次打开时重新选择文件夹'});
+   }const cards=await parse(files),snapshot={...cards,...await npcSnapshot(()=>npcReader.fromFileList(list)),...await eventSnapshot(()=>eventReader.fromFileList(list))};if(ticket!==revision){snapshot.npcRelease?.();snapshot.eventWorkspace?.release?.();return;}
+   state.npcRelease?.();state.eventWorkspace?.release?.();update({...snapshot,handle:null,name:list[0]?.webkitRelativePath.split('/')[0] || '本地项目',status:'connected',message:'已连接 · 当前浏览器需在下次打开时重新选择文件夹'});
    try{await save(null,ticket);}catch { /* in-memory connection still works */ }
    }catch(e){if(ticket===revision)fail(e);}
   }
-  async function disconnect(){if(state.workspace?.locked||state.eventWorkspace?.locked)return;const ticket=++revision;state.npcRelease?.();update({eventWorkspace:null,eventError:'',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'disconnected',name:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,handle:null,message:'已断开游戏项目 · 当前展示演示数据'});try{await save(null,ticket);}catch{if(ticket===revision)update({message:'已断开；浏览器未能清除记忆，请在网站设置中清除本地存储'});}}
+  async function disconnect(){if(state.workspace?.locked||state.eventWorkspace?.locked)return;const ticket=++revision;state.npcRelease?.();state.eventWorkspace?.release?.();update({eventWorkspace:null,eventError:'',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'disconnected',name:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,handle:null,message:'已断开游戏项目 · 当前展示演示数据'});try{await save(null,ticket);}catch{if(ticket===revision)update({message:'已断开；浏览器未能清除记忆，请在网站设置中清除本地存储'});}}
   function applied(originalBytes){state.originalBytes=originalBytes;state.documents=state.workspace?.documents;state.workspace?.markSaved();update({message:'修改已应用 · 备份已验证'});}
   function portraitApplied(handle,records,path,bytes){if(state.handle!==handle||state.npcRecords!==records||!state.npcUpdate)throw Error('项目连接已变化，请重新读取');state.npcUpdate(path,bytes);emit('portrait');}
   return {portraitApplied,getState:()=>({...state,records:state.workspace?state.workspace.records:state.records,branches:state.workspace?state.workspace.branches:state.branches,connected:connected()}),applied,report:message=>update({message}),open,openFiles,restore,authorize,refresh,disconnect};

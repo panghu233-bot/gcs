@@ -11,3 +11,13 @@ test('browser entry loads dependencies before consumers and real events route in
  for(const [a,b] of [['gdscript-string-patch.js','event-project.js'],['event-project.js','game-project.js'],['event-project.js','event-writer.js'],['event-writer.js','event-studio.js'],['event-studio.js','app.js']])assert(scripts.indexOf(a)>=0&&scripts.indexOf(a)<scripts.indexOf(b));
  const app=fs.readFileSync('site/app.js','utf8');assert(app.includes('if(realEvents()){renderList();window.GCSEventStudio.render('));assert(app.includes('if(realEvents()){window.GCSEventStudio.renderList(query);return;}'));assert(app.includes('if(realEvents())return;'));
 });
+
+
+test('event portrait resources release on refresh, permission loss and disconnect; dependencies load in order',async()=>{
+ const made=[],adapter={projectFiles:{cards:'data/catalog.json',branches:'data/branches.json'},readRecords:j=>j.records,readBranches:j=>j.groups};
+ let allowed=true;
+ const handle={name:'test',queryPermission:async()=>allowed?'granted':'denied',getDirectoryHandle:async()=>handle,getFileHandle:async n=>({getFile:async()=>({size:100,text:async()=>JSON.stringify(n==='catalog.json'?{records:[{id:'one'}]}:{groups:{one:[]}})})})};
+ const p=createProject({adapter,store:{load:async()=>null,save:async()=>{}},eventReader:{fromHandle:async()=>{const w={changes:[],release(){this.released=true;}};made.push(w);return w;}}});
+ await p.open(async()=>handle);await p.refresh();assert(made[0].released);assert(!made[1].released);allowed=false;await p.refresh();assert(made[1].released);allowed=true;await p.open(async()=>handle);await p.disconnect();assert(made[2].released);
+ const html=fs.readFileSync('site/index.html','utf8');assert(html.indexOf('src="gdscript-string-patch.js"')<html.indexOf('src="event-performance.js"'));assert(html.indexOf('src="event-performance.js"')<html.indexOf('src="event-project.js"'));
+});

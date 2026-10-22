@@ -52,3 +52,12 @@
 .workspace.event-workspace.event-preview-open > #editor{grid-column:3}
 .workspace.event-workspace.event-preview-open > #preview{grid-column:4}
 @media(max-width:1000px){.workspace.event-workspace.event-preview-open > #preview{grid-column:3}}
+
+/* Selected-line local portrait preview; event-only, no changes to NPC/card panels. */
+.workspace.event-workspace.event-preview-open > #preview{min-width:0}
+.event-performance-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start;min-height:190px}
+.event-performance-side{min-width:0;text-align:center}
+.event-performance-side img{display:block;width:100%;height:260px;object-fit:contain;object-position:center bottom}
+.event-performance-caption,.event-performance-speaker{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.event-performance-side .hint{font-size:11px}
+.workspace.event-workspace [role=button]{cursor:pointer}

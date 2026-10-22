@@ -91,3 +91,25 @@ test('selected dialogue owns inline controls; switching selection moves the edit
  x.find('后插').onclick();assertInline(2);assert(x.w.hasStructuralChanges);assert(x.find('查看差异并应用').disabled);
  x.find('撤销一步').onclick();assertInline(1);x.find('重做').onclick();assertInline(2);
 });
+
+
+test('preview defaults closed; reading and editing select the same real portrait without losing input selection',async()=>{
+ const x=ui(),calls=[];x.w.performance={load:async line=>{calls.push(line);return {left:{name:'',empty:true},right:{name:line.right,image:'blob:local-'+line.mood,path:'assets/test/'+line.mood+'.png',mood:line.mood}};}};
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ assert.equal(x.preview.children.length,0);assert.equal(x.find('演出预览')['aria-expanded'],'false');
+ x.find('演出预览').onclick();await flush();assert.equal(x.find('演出预览')['aria-expanded'],'true');assert.equal(calls.length,1);
+ assert.equal(descendants(x.preview).filter(n=>n.tag==='img').length,1);assert.equal(descendants(x.preview).find(n=>n.tag==='img').src,'blob:local-normal');
+ const rows=()=>descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'));
+ rows()[4].onclick();await flush();assert.equal(x.w.selectedIndex,4);assert.equal(descendants(x.preview).find(n=>n.tag==='pre').textContent,x.w.texts[4]);assert.equal(descendants(x.editor).filter(n=>n.tag==='textarea').length,0);
+ rows()[2].onkeydown({key:'Enter',preventDefault(){}});await flush();assert.equal(x.w.selectedIndex,2);
+ x.find('编辑剧本').onclick();await flush();assert.equal(x.w.selectedIndex,2);const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='同步预览草稿';input.selectionStart=2;input.selectionEnd=2;const before=calls.length;input.oninput();await flush();assert.equal(calls.length,before);assert.equal(descendants(x.editor).find(n=>n.tag==='textarea'),input);assert.equal(input.selectionStart,2);assert.equal(descendants(x.preview).find(n=>n.tag==='pre').textContent,'同步预览草稿');
+ x.find('演出预览').onclick();assert.equal(x.preview.children.length,0);assert.equal(x.w.texts[2],'同步预览草稿');x.find('完成编辑').onclick();assert.equal(x.find('演出预览')['aria-expanded'],'false');
+});
+
+test('a slow old portrait response cannot replace the newest selected line',async()=>{
+ const x=ui(),pending=[];x.w.performance={load:line=>new Promise(resolve=>pending.push({line,resolve}))};const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ x.find('演出预览').onclick();await flush();descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'))[5].onclick();await flush();
+ const result=image=>({left:{name:'',empty:true},right:{name:'测试人物',image,mood:'normal'}});
+ pending[1].resolve(result('blob:new'));await flush();pending[0].resolve(result('blob:old'));await flush();assert.equal(descendants(x.preview).find(n=>n.tag==='img').src,'blob:new');assert.equal(x.w.selectedIndex,5);
+ x.find('演出预览').onclick();assert.equal(x.preview.children.length,0);
+});
