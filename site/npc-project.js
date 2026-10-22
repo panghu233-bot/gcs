@@ -127,15 +127,14 @@ function dialogueEvents(text,source){
  return Array.from(groups.values()).filter(e=>e.references.length);
 }
 function playerCharacterNames(sources){
- // The scene visuals controller is the authoritative player binding: its
- // non-dialogue character portrait fallback names the controllable character.
- // Do not infer protagonist status from emotion routes or action renderers;
- // those can also be used by independent NPC portrait implementations.
- const names=new Set(),visuals=sources.visuals||'';
+ // The scene controller binds its player portrait to the player-stats mood.
+ // Read executable call tokens, so comments and NPC emotion/action routes
+ // cannot identify a protagonist or suppress an independent NPC record.
+ const names=new Set(),blocks=functionBlocks(sources.visuals||'');
  for(const fnName of ['refresh_character_portrait','apply_editor_char_sprite_preview']){
-  const fn=functionBlocks(visuals).find(f=>f.name===fnName);
-  const match=fn?.code.match(/load_portrait_for_speaker\s*\(\s*"([^"\r\n]+)"/);
-  if(match)names.add(match[1]);
+  const fn=blocks.find(f=>f.name===fnName);if(!fn)continue;
+  const ts=tokens(fn.code);
+  for(let i=0;i<ts.length;i++)if(ts[i].raw==='load_portrait_for_speaker'&&ts[i+1]?.raw==='('&&ts[i+2]?.type==='string'&&ts[i+3]?.raw===','&&ts[i+4]?.raw==='_stats_portrait_mood_key'&&ts[i+5]?.raw==='('&&ts[i+6]?.raw===')'&&ts[i+7]?.raw===')')names.add(ts[i+2].value);
  }
  return names;
 }
@@ -214,10 +213,10 @@ function indexFromSources(sources){
   p.enemies=enemyJson.enemies.filter(e=>e&&e.name===p.name&&typeof e.id==='string').map(e=>({id:e.id,name:e.name,max_hp:e.max_hp,source:paths.enemies}));p.enemy=p.enemies[0]||null;
   if(p.enemies.length&&!p.sources.includes(paths.enemies))p.sources.push(paths.enemies);
  }
-  const playerNames=playerCharacterNames(sources);
-  const records=Array.from(people.values()).filter(p=>!playerNames.has(p.name));
-  portraitCandidates(records,sources,events);
-  return records.sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
+ const playerNames=playerCharacterNames(sources);
+ const records=Array.from(people.values()).filter(p=>!playerNames.has(p.name));
+ portraitCandidates(records,sources,events);
+ return records.sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
 }
 function portraitCandidates(records,sources,events){
  const visual=sources.visuals||'',vc=literalConstants(visual),folders=vc.SPEAKER_PORTRAIT_MAP||{},files=vc.SPEAKER_FILENAME_MAP||{},base=vc.PORTRAIT_BASE_PATH;

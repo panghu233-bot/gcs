@@ -49,6 +49,7 @@ test('source-backed portrait moods follow the actual target and scoped helper li
  const records=reader.indexFromSources(sources()),a=records.find(n=>n.name==='甲角色'),b=records.find(n=>n.name==='乙角色');
  assert.ok(a.portraits.some(p=>p.ref.endsWith('/shy.png')));
  assert.ok(a.portraits.some(p=>p.ref.endsWith('/happy.png')));
+ assert.ok(a.portraits.some(p=>p.ref.endsWith('/music.png')));
  assert.deepEqual(b.portraits.map(p=>p.ref),['res://assets/cultivation/portraits/alpha/normal.png']);
  assert.ok(a.events.some(e=>e.dialogues.some(d=>d.text==='独立对白')));
  assert.ok(!a.events.some(e=>e.dialogues.some(d=>d.text==='另一个人物')));
@@ -75,12 +76,15 @@ test('player character is excluded while NPC records and event references remain
  s.visuals=s.visuals.replace('"丙角色":"npc"','"丙角色":"npc", "玩家主角":"guqinghan"');
  s.visuals += `
  func refresh_character_portrait():
-  var tex = load_portrait_for_speaker("玩家主角", "normal")
+  # load_portrait_for_speaker("乙角色", _stats_portrait_mood_key())
+  var other = load_portrait_for_speaker("甲角色", "normal")
+  var tex = load_portrait_for_speaker("玩家主角", _stats_portrait_mood_key())
  func apply_editor_char_sprite_preview():
-  var tex = load_portrait_for_speaker("玩家主角", "normal")`;
+  var tex = load_portrait_for_speaker("玩家主角", _stats_portrait_mood_key())`;
  s.data=s.data.replace('"right":"乙角色","mood":"happy"','"right":"玩家主角","mood":"happy"');
  const records=reader.indexFromSources(s);
  assert.equal(records.some(n=>n.name==='玩家主角'),false);
+ assert.deepEqual(records.map(n=>n.name).sort(),['甲角色','乙角色','丙角色'].sort());
  const npc=records.find(n=>n.name==='甲角色');
  assert.ok(npc);
  const event=npc.events.find(e=>e.eventId==='event_one');
