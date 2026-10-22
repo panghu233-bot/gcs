@@ -36,8 +36,13 @@ async function reviewRestore({project,backupDirectory,originalBytes,entryBytes})
 }
 async function prepareRestore(review,{backupParent,uuid}={}){
  const r=restores.get(review);if(!r)throw Error('备份审阅已失效');await verifyRestore(r);
- const token=await prepare({project:r.project,backupParent,originalBytes:r.before,entryBytes:r.entryBefore,changes:r.changes,uuid});
- jobs.get(token).restore=r;return token;
+ if(backupParent){const token=await prepare({project:r.project,backupParent,originalBytes:r.before,entryBytes:r.entryBefore,changes:r.changes,uuid});jobs.get(token).restore=r;return token;}
+ const before=new Uint8Array(r.before),entryBefore=new Uint8Array(r.entryBefore),spec=events.manifest;
+ events.parse({[spec.sourcePath]:before,[spec.entryPath]:entryBefore});
+ const after=patch.plan({originalBytes:before,spec,changes:r.changes}).bytes,handle=await events.locate(r.project,spec.sourcePath),entryHandle=await events.locate(r.project,spec.entryPath);
+ if(!patch.equal(await read(handle),before)||!patch.equal(await read(entryHandle),entryBefore))throw Error('磁盘源码或执行入口已变化，请重新读取');
+ const token=Object.freeze({backupName:review.backupName,filename:spec.sourcePath.split('/').at(-1),path:spec.sourcePath});
+ jobs.set(token,{project:r.project,handle,entryHandle,before,entryBefore,after,restore:r,used:false});return token;
 }
 async function prepare({project,backupParent,originalBytes,entryBytes,changes,uuid=()=>crypto.randomUUID()}){
  const spec=events.manifest,before=new Uint8Array(originalBytes),entryBefore=new Uint8Array(entryBytes);
@@ -58,9 +63,9 @@ async function prepare({project,backupParent,originalBytes,entryBytes,changes,uu
  }catch(e){throw Object.assign(Error('备份未完成，游戏原文件未写入：'+e.message),{backupName});}
 }
 async function apply(token,{project,permissionGranted=false}={}){
- const job=jobs.get(token);if(!job||job.used||job.project!==project)throw Error('对白确认已失效，请重新备份');if(!permissionGranted)throw Error('未获得用户写入授权');job.used=true;
+ const job=jobs.get(token);if(!job||job.used||job.project!==project)throw Error('对白确认已失效，请重新审阅');if(!permissionGranted)throw Error('未获得用户写入授权');job.used=true;
  let stream,attempted=false;
- async function check(){if(job.restore)await verifyRestore(job.restore);if(!patch.equal(await read(job.handle),job.before)||!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('磁盘源码或执行入口已变化，已停止覆盖');if(!patch.equal(await read(job.backupFile),job.before))throw Error('备份内容已变化');}
+ async function check(){if(job.restore)await verifyRestore(job.restore);if(!patch.equal(await read(job.handle),job.before)||!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('磁盘源码或执行入口已变化，已停止覆盖');if(job.backupFile&&!patch.equal(await read(job.backupFile),job.before))throw Error('备份内容已变化');}
  try{
   await check();stream=await job.handle.createWritable({mode:'exclusive'});await stream.write(job.after);await check();attempted=true;await stream.close();
   const disk=await read(job.handle);if(!patch.equal(await read(job.entryHandle),job.entryBefore))throw Error('写后执行入口已变化');if(!patch.equal(disk,job.after))throw Error('写入后读回校验失败');patch.readLinear(disk,events.manifest);
@@ -70,10 +75,10 @@ async function apply(token,{project,permissionGranted=false}={}){
   if(attempted){try{
    const disk=await read(job.handle);if(patch.equal(disk,job.before))recovered=true;
    else if(patch.equal(disk,job.after)){
-    let rollback;try{if(!patch.equal(await read(job.backupFile),job.before))throw Error('备份已变化');rollback=await job.handle.createWritable({mode:'exclusive'});await rollback.write(job.before);if(!patch.equal(await read(job.handle),job.after))throw Error('恢复期间存在外部修改');await rollback.close();if(!patch.equal(await read(job.handle),job.before))throw Error('恢复校验失败');recovered=true;}catch(error){if(rollback)await rollback.abort().catch(()=>{});throw error;}
+    let rollback;try{if(job.backupFile&&!patch.equal(await read(job.backupFile),job.before))throw Error('备份已变化');rollback=await job.handle.createWritable({mode:'exclusive'});await rollback.write(job.before);if(!patch.equal(await read(job.handle),job.after))throw Error('恢复期间存在外部修改');await rollback.close();if(!patch.equal(await read(job.handle),job.before))throw Error('恢复校验失败');recovered=true;}catch(error){if(rollback)await rollback.abort().catch(()=>{});throw error;}
    }else recoveryNeeded=true;
   }catch{recoveryNeeded=true;}}
-  throw Object.assign(Error(e.message+(recovered?'；已确认原文件恢复':recoveryNeeded?'；自动恢复未完成，请检查备份手动恢复':'；未提交原文件修改')),{recovered,recoveryNeeded,backupName:token.backupName});
+  throw Object.assign(Error(e.message+(recovered?'；已确认原文件恢复':recoveryNeeded?(job.restore&&!job.backupFile?'；自动恢复未完成，磁盘内容可能已变化，请停止编辑并检查所选备份；本次写入前的内存快照未另存到磁盘，不会自动覆盖检测到的外部修改':'；自动恢复未完成，请检查备份手动恢复'):'；未提交原文件修改')),{recovered,recoveryNeeded,backupName:token.backupName});
  }
 }
 const api={prepare,apply,reviewRestore,prepareRestore};if(typeof module!=='undefined')module.exports=api;root.GCSEventWriter=api;
