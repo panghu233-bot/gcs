@@ -218,6 +218,6 @@
     renderReader();
   });
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();if(!$('dialog[open]'))$('#export-btn').click();}});
-  window.addEventListener('gcs-project-change',event=>{if(event.detail?.kind==='draft' && realCards()){renderList();window.GCSGameCards.refresh?.();}else render();});
+  window.addEventListener('gcs-project-change',event=>{if(event.detail?.kind==='event-input' && realEvents()){renderList();}else if(event.detail?.kind==='draft' && realCards()){renderList();window.GCSGameCards.refresh?.();}else render();});
   render();$('#save-state').textContent=loadMessage.includes('不可用')?'暂存异常 · 请保存 JSON':loadMessage?'✓ 已恢复本地暂存':'演示项目 · 修改自动暂存';if(loadMessage)toast(loadMessage);
 })();

@@ -40,3 +40,6 @@
 
 /* Real event text and review preserve authored whitespace. */
 .event-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.8;padding:12px;background:var(--panel,#171d2c);border-radius:8px}.event-before{border-left:3px solid #ba7474}.event-after{border-left:3px solid #6fb697}#event-dialog{width:min(900px,90vw);max-height:85vh;overflow:auto}#event-dialog .apply-change{margin:18px 0}
+
+/* Phase 1: event reading and selected-row draft editing. */
+.event-script{display:flex;flex-direction:column;gap:10px;margin:18px 0}.event-script-row{display:block;width:100%;text-align:left;white-space:normal;padding:16px;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit}.event-script-row.selected{border-color:#a99bfa;background:#28243a}.event-script-row:focus-visible{outline:2px solid #c8b9ff;outline-offset:2px}.event-script-speaker{font-size:12px;color:var(--muted,#b5adc7)}.event-script-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;margin:8px 0 0;font-size:15px}.event-line-actions{margin:12px 0 0}.event-inline-field{display:block;margin:12px 0}.event-inline-field textarea{width:100%;min-height:140px}

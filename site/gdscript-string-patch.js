@@ -57,19 +57,19 @@ function readLinear(bytes,spec){
  const si=cls.indexOf(constants[0]),speaker=cls[si+4];if(cls[si+2]?.value!==':'||cls[si+3]?.value!=='='||speaker?.kind!=='string'||speaker.prefix)throw Error('说话人必须是直接字符串常量');
  const helper=scope(cls,'func','_line');
  if(!sameTokens(helper,'static func _line(text: String, mood: String = "normal") -> Dictionary:\n return {"speaker": PORTRAIT_SPEAKER, "text": text, "left": "", "right": PORTRAIT_SPEAKER, "mood": mood,}'))throw Error('_line 说话人/文字映射已变化');
- const fn=scope(cls,'func',spec.functionName);let pos=0;const lines=[];
+ const fn=scope(cls,'func',spec.functionName);let pos=0;const lines=[];let openingBg=null;
  const take=value=>{if(fn[pos++]?.value!==value)throw Error('不支持的线性对白结构：预期 '+value);};
  const seq=values=>values.forEach(take);
  seq(['static','func',spec.functionName,'(',')','-','>','Array','[','Dictionary',']',':','var','out',':','Array','[','Dictionary',']','=', '[',']']);
  function call(){seq(['_line','(']);const text=fn[pos++];if(text?.kind!=='string'||text.prefix)throw Error('只允许 _line 第一个参数为普通字符串字面量');take(',');const mood=fn[pos++];if(mood?.kind!=='string'||mood.prefix)throw Error('表情必须为字面量');take(')');lines.push({text:text.value,speaker:speaker.value,token:text,line:text.line,mood:mood.value});}
  if(fn[pos]?.value==='var'){
   seq(['var','first',':','=']);call();
-  if(fn[pos]?.value==='first'){seq(['first','[']);if(fn[pos++]?.value!=='bg')throw Error('不支持的首句属性');seq([']','=']);if(fn[pos++]?.kind!=='id')throw Error('背景必须是常量引用');}
+  if(fn[pos]?.value==='first'){seq(['first','[']);if(fn[pos++]?.value!=='bg')throw Error('不支持的首句属性');seq([']','=']);const bg=fn[pos++];if(bg?.kind!=='id')throw Error('背景必须是常量引用');openingBg=bg.value;}
   seq(['out','.','append','(','first',')']);
  }
  while(fn[pos]?.value==='out'){seq(['out','.','append','(']);call();take(')');}
  seq(['return','out']);if(pos!==fn.length||lines.length!==spec.expectedCount)throw Error('对白数量或执行顺序已变化，拒绝猜测');
- return {source,lines};
+ return {source,lines,openingBg};
 }
 function plan({originalBytes,spec,changes}){
  const before=new Uint8Array(originalBytes),parsed=readLinear(before,spec);if(!Array.isArray(changes)||!changes.length)throw Error('没有对白修改');

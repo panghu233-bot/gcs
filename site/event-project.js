@@ -9,14 +9,35 @@ function parse(files){
  const parsed=patch.readLinear(originalBytes,manifest),speaker=parsed.lines[0].speaker;
  const expected=`func on_day12_countdown_rest_requested() -> void:\n if not _host.cultivation_manager.is_event_allowed(&"day12_countdown"):\n  return\n var lines := CultivationData.Day12CountdownEvent.create_lines()\n _host.dialogue_player.set_speakers(PackedStringArray([${JSON.stringify(speaker)}]))\n _host._start_dialogue(lines, Callable(self, "on_day12_countdown_finished"))`;
  if(!patch.sameTokens(entry,expected))throw Error('实际执行入口已变化，无法确认事件映射');
- const baseline=parsed.lines.map(l=>l.text),draft=[...baseline];let locked=false,blocked=false;const history=[];
- const workspace={manifest,lines:parsed.lines.map(({token,...l})=>l),originalBytes,entryBytes,
-  get locked(){return locked;},get blocked(){return blocked;},get changes(){return draft.flatMap((after,index)=>after===baseline[index]?[]:[{index,before:baseline[index],after}]);},
-  get texts(){return [...draft];},set(index,value){if(locked||blocked)throw Error('当前事件已锁定');if(!Number.isInteger(index)||!workspace.lines[index]||typeof value!=='string')throw Error('无效对白');if(draft[index]!==value){history.push([...draft]);if(history.length>100)history.shift();draft[index]=value;}},
-  get canUndo(){return history.length>0;},undo(){if(locked||blocked)throw Error('当前事件已锁定');const last=history.pop();if(last)draft.splice(0,draft.length,...last);},
-  discard(){if(locked||blocked)throw Error('正在应用');draft.splice(0,draft.length,...baseline);history.length=0;},setLocked(value){locked=!!value;},block(){blocked=true;},
-  plan(){return patch.plan({originalBytes:workspace.originalBytes,spec:manifest,changes:workspace.changes});},
-  saved(bytes){const next=patch.readLinear(bytes,manifest);workspace.originalBytes=new Uint8Array(bytes);workspace.lines=next.lines.map(({token,...l})=>l);baseline.splice(0,baseline.length,...next.lines.map(l=>l.text));draft.splice(0,draft.length,...baseline);history.length=0;}
+ // Full draft rows stay in memory. Stable identity prevents reorders being saved as text edits.
+ let serial=0,locked=false,blocked=false,selectedId=null;
+ const makeRows=bytes=>patch.readLinear(bytes,manifest).lines.map(({token,...line})=>({...line,id:'source-'+serial++,left:'',right:line.speaker}));
+ let baseline=makeRows(originalBytes),draft=baseline.map(l=>({...l}));selectedId=draft[0].id;
+ const history=[],future=[],copy=rows=>rows.map(l=>({...l}));
+ const snapshot=()=>({rows:copy(draft),selectedId});
+ const writable=()=>{if(locked||blocked)throw Error('当前事件已锁定');};
+ const at=index=>{if(!Number.isInteger(index)||!draft[index])throw Error('无效对白');return draft[index];};
+ function remember(){history.push(snapshot());if(history.length>100)history.shift();future.length=0;}
+ function restore(s){draft=copy(s.rows);selectedId=s.selectedId;}
+ const structural=()=>draft.length!==baseline.length||draft.some((l,i)=>l.id!==baseline[i].id);
+ const workspace={manifest,originalBytes,entryBytes,openingBackground:parsed.openingBg,
+  get lines(){return copy(draft);},get texts(){return draft.map(l=>l.text);},
+  get selectedIndex(){return draft.findIndex(l=>l.id===selectedId);},
+  select(index){selectedId=at(index).id;},
+  get locked(){return locked;},get blocked(){return blocked;},get hasStructuralChanges(){return structural();},
+  get changes(){const texts=draft.flatMap(l=>{const index=baseline.findIndex(b=>b.id===l.id);return index<0||l.text===baseline[index].text?[]:[{index,before:baseline[index].text,after:l.text}];});return structural()?[{kind:'structure'},...texts]:texts;},
+  set(index,value){writable();const row=at(index);if(typeof value!=='string'||value.length>20000)throw Error('对白必须是 20000 字以内的文本');if(row.text!==value){remember();row.text=value;}},
+  insert(index,after=false){writable();const row=at(index);remember();const next={...row,id:'draft-'+serial++,text:'',line:null};draft.splice(index+(after?1:0),0,next);selectedId=next.id;},
+  duplicate(index){writable();const row=at(index);remember();const next={...row,id:'draft-'+serial++,line:null};draft.splice(index+1,0,next);selectedId=next.id;},
+  remove(index){writable();at(index);if(draft.length===1)throw Error('至少保留一句对白');remember();draft.splice(index,1);selectedId=draft[Math.min(index,draft.length-1)].id;},
+  move(index,direction){writable();const row=at(index);if(![-1,1].includes(direction))throw Error('无效移动方向');const next=index+direction;if(next<0||next>=draft.length)return;remember();[draft[index],draft[next]]=[draft[next],draft[index]];selectedId=row.id;},
+  get canUndo(){return history.length>0;},get canRedo(){return future.length>0;},
+  undo(){writable();if(history.length){future.push(snapshot());restore(history.pop());}},
+  redo(){writable();if(future.length){history.push(snapshot());restore(future.pop());}},
+  discard(){writable();draft=copy(baseline);selectedId=draft[0].id;history.length=0;future.length=0;},
+  setLocked(value){locked=!!value;},block(){blocked=true;},
+  plan(){if(structural())throw Error('结构修改仅保留内存草稿，第一阶段不支持写回；请撤销结构修改后再保存文字');return patch.plan({originalBytes:workspace.originalBytes,spec:manifest,changes:workspace.changes});},
+  saved(bytes){baseline=makeRows(bytes);workspace.originalBytes=new Uint8Array(bytes);draft=copy(baseline);selectedId=draft[0].id;history.length=0;future.length=0;}
  };return workspace;
 }
 async function locate(project,path){let d=project;const p=path.split('/');for(const s of p.slice(0,-1))d=await d.getDirectoryHandle(s,{create:false});return d.getFileHandle(p.at(-1),{create:false});}
