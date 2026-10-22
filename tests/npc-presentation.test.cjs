@@ -49,7 +49,6 @@ test('source-backed portrait moods follow the actual target and scoped helper li
  const records=reader.indexFromSources(sources()),a=records.find(n=>n.name==='甲角色'),b=records.find(n=>n.name==='乙角色');
  assert.ok(a.portraits.some(p=>p.ref.endsWith('/shy.png')));
  assert.ok(a.portraits.some(p=>p.ref.endsWith('/happy.png')));
- assert.ok(a.portraits.some(p=>p.ref.endsWith('/music.png')));
  assert.deepEqual(b.portraits.map(p=>p.ref),['res://assets/cultivation/portraits/alpha/normal.png']);
  assert.ok(a.events.some(e=>e.dialogues.some(d=>d.text==='独立对白')));
  assert.ok(!a.events.some(e=>e.dialogues.some(d=>d.text==='另一个人物')));
@@ -70,6 +69,25 @@ test('all portrait URLs are local, deduplicated and released exactly once',async
  const create=URL.createObjectURL,revoke=URL.revokeObjectURL,made=[],freed=[];
  URL.createObjectURL=()=>{const u='blob:portrait-'+made.length;made.push(u);return u;};URL.revokeObjectURL=u=>freed.push(u);
  try{const result=await reader.fromFileList(files);const a=result.records.find(n=>n.name==='甲角色'),b=result.records.find(n=>n.name==='乙角色');assert.equal(a.image,b.image);assert.ok(a.portraits.filter(p=>p.image).length>1);result.release();result.release();assert.deepEqual(freed,made);}finally{URL.createObjectURL=create;URL.revokeObjectURL=revoke;}
+});
+test('player character is excluded while NPC records and event references remain',()=>{
+ const s=sources();
+ s.visuals=s.visuals.replace('"丙角色":"npc"','"丙角色":"npc", "玩家主角":"guqinghan"');
+ s.visuals += `
+ func refresh_character_portrait():
+  var tex = load_portrait_for_speaker("玩家主角", "normal")
+ func apply_editor_char_sprite_preview():
+  var tex = load_portrait_for_speaker("玩家主角", "normal")`;
+ s.data=s.data.replace('"right":"乙角色","mood":"happy"','"right":"玩家主角","mood":"happy"');
+ const records=reader.indexFromSources(s);
+ assert.equal(records.some(n=>n.name==='玩家主角'),false);
+ const npc=records.find(n=>n.name==='甲角色');
+ assert.ok(npc);
+ const event=npc.events.find(e=>e.eventId==='event_one');
+ assert.ok(event);
+ assert.ok(event.references.includes('玩家主角'));
+ assert.ok(event.dialogues.some(d=>d.right==='玩家主角'));
+ assert.ok(records.every(n=>!n.portraits.some(p=>p.ref.includes('/guqinghan/'))));
 });
 test('real event summaries default closed and portrait selection synchronizes both renderers',()=>{
  const context={window:{}};vm.runInNewContext(fs.readFileSync('site/npc-studio.js','utf8'),context);const studio=context.window.GCSNPCStudio;

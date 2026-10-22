@@ -126,6 +126,19 @@ function dialogueEvents(text,source){
  }
  return Array.from(groups.values()).filter(e=>e.references.length);
 }
+function playerCharacterNames(sources){
+ // The scene visuals controller is the authoritative player binding: its
+ // non-dialogue character portrait fallback names the controllable character.
+ // Do not infer protagonist status from emotion routes or action renderers;
+ // those can also be used by independent NPC portrait implementations.
+ const names=new Set(),visuals=sources.visuals||'';
+ for(const fnName of ['refresh_character_portrait','apply_editor_char_sprite_preview']){
+  const fn=functionBlocks(visuals).find(f=>f.name===fnName);
+  const match=fn?.code.match(/load_portrait_for_speaker\s*\(\s*"([^"\r\n]+)"/);
+  if(match)names.add(match[1]);
+ }
+ return names;
+}
 function safeResource(ref){
  const path=String(ref||'').replace(/^res:\/\//,'');
  return path.startsWith('assets/')&&!/[\\\x00-\x1f:]/.test(path)&&!path.split('/').some(p=>!p||p==='.'||p==='..')&&/\.(png|jpe?g|webp)$/i.test(path)?path:'';
@@ -201,8 +214,10 @@ function indexFromSources(sources){
   p.enemies=enemyJson.enemies.filter(e=>e&&e.name===p.name&&typeof e.id==='string').map(e=>({id:e.id,name:e.name,max_hp:e.max_hp,source:paths.enemies}));p.enemy=p.enemies[0]||null;
   if(p.enemies.length&&!p.sources.includes(paths.enemies))p.sources.push(paths.enemies);
  }
- portraitCandidates(Array.from(people.values()),sources,events);
- return Array.from(people.values()).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
+  const playerNames=playerCharacterNames(sources);
+  const records=Array.from(people.values()).filter(p=>!playerNames.has(p.name));
+  portraitCandidates(records,sources,events);
+  return records.sort((a,b)=>a.name.localeCompare(b.name,'zh-Hans-CN'));
 }
 function portraitCandidates(records,sources,events){
  const visual=sources.visuals||'',vc=literalConstants(visual),folders=vc.SPEAKER_PORTRAIT_MAP||{},files=vc.SPEAKER_FILENAME_MAP||{},base=vc.PORTRAIT_BASE_PATH;
