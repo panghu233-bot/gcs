@@ -1,0 +1,46 @@
+// Focused real-data directory acceptance; invoked with --folding by the existing harness.
+const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path');
+module.exports=async({page,connect,screens,errors})=>{
+ const list=page.locator('#record-list'),search=page.locator('#search'),bucket=id=>page.locator('[data-story-bucket="'+id+'"]'),tree=id=>page.locator('[data-story-id="story:'+id+'"]'),parent=id=>page.locator('[data-story-select="story:'+id+'"]');
+ const expanded=()=>list.locator('details[open]').evaluateAll(ns=>ns.map(n=>n.dataset.storyBucket||n.dataset.storyId||n.dataset.sourceCategory).sort());
+ const prefs=()=>page.evaluate(()=>localStorage.getItem('gcs-story-expanded-v1'));
+ const toggle=n=>n.locator(':scope > summary').click({position:{x:5,y:10}});
+ const closeAll=()=>list.locator('details[open]').evaluateAll(ns=>ns.reverse().forEach(n=>n.querySelector('summary').click()));
+ const screenshot=async name=>{if(screens<0)return;const dir=path.resolve(process.argv[screens+1]);await fs.mkdir(dir,{recursive:true});await page.screenshot({path:path.join(dir,name+'.png')});};
+ const reload=async()=>{await page.unroute('**/*');await page.reload();await page.waitForFunction(()=>window.GCSEventStories&&window.GCSProject);await page.route('**/*',route=>route.abort());await connect();await page.locator('[data-module=events]').click();};
+ assert.deepEqual(await expanded(),[],'first visit must collapse every category and story parent');
+ assert.equal(await page.locator('#list-count').innerText(),'32 事件 · 60 来源');
+ assert.equal(new Set(await list.locator('[data-event-id]').evaluateAll(ns=>ns.map(n=>n.dataset.eventId))).size,60);
+ assert.equal(await list.locator('[data-story-root] [data-story-time]').count(),32);
+ assert.equal(await page.locator('[data-empty-cycle=cycle2]').isVisible(),false);
+ assert.equal(await page.locator('[data-calendar-note]').isVisible(),false);
+ assert.equal(await list.locator(':scope > .story-calendar-note').count(),0);
+ await screenshot('directory-collapsed');
+ await toggle(bucket('cycle2'));assert(await page.locator('[data-empty-cycle=cycle2]').isVisible());await toggle(bucket('cycle2'));
+ await toggle(bucket('cycle1'));assert.equal(await tree('wood').getAttribute('open'),null);
+ await toggle(tree('wood'));assert.deepEqual(await expanded(),['cycle1','story:wood']);
+ await screenshot('single-category-expanded');await reload();assert.deepEqual(await expanded(),['cycle1','story:wood'],'refresh restores user expansion');
+ await toggle(tree('wood'));await reload();assert.deepEqual(await expanded(),['cycle1'],'refresh restores explicit story collapse');
+ await closeAll();const before=await prefs();
+ await search.fill('夜晚');assert(await tree('mother-care').getAttribute('open')!==null);assert(await parent('mother-care').isVisible());await screenshot('search-temporary-expansion');
+ await tree('mother-care').locator('[data-event-id]').first().click();await search.fill('');assert.deepEqual(await expanded(),[],'clearing search restores pre-search collapsed state');assert.equal(await prefs(),before);
+ await search.fill('木人试招');await parent('wood').click();await search.fill('');assert.deepEqual(await expanded(),[],'search overview selection does not persist expansion');assert.equal(await prefs(),before);
+ // External source navigation reveals only necessary ancestors, and survives editor redraws.
+ const ids=await page.evaluate(()=>{const rows=__directoryTest.s.eventWorkspace.eventRecords,m=GCSEventStories.build(rows),wood=m.allStories.find(s=>s.id==='story:wood'),technical=rows.find(r=>{const d=GCSEventDirectory.describe(r);return d.category==='technical'&&d.related.length;});return {wood:wood.sourceIds,technical:technical.manifest.id};});
+ await page.evaluate(id=>GCSProject.selectEvent(id),ids.wood[1]);assert.deepEqual(await expanded(),['cycle1','story:wood']);assert(await list.locator('.record.active').isVisible());
+ await page.evaluate(()=>GCSEventStudio.renderList(''));assert.deepEqual(await expanded(),['cycle1','story:wood']);assert.equal(await prefs(),before,'navigation is not a user preference');
+ await toggle(tree('wood'));await page.evaluate(()=>GCSEventStudio.renderList(''));assert.deepEqual(await expanded(),['cycle1'],'manual collapse overrides navigation reveal');
+ await toggle(bucket('cycle1'));await page.evaluate(id=>GCSProject.selectEvent(id),ids.technical);assert.deepEqual(await expanded(),['technical']);
+ const related=page.locator('#editor [data-related-event-id]').first();const relatedId=await related.getAttribute('data-related-event-id');await related.click();
+ const expected=await page.evaluate(id=>{const m=GCSEventStories.build(__directoryTest.s.eventWorkspace.eventRecords),s=m.allStories.find(s=>s.sourceIds.includes(id));return [s.bucket,...(s.grouped?[s.id]:[])].sort();},relatedId);
+ assert.deepEqual(await expanded(),expected,'related navigation opens only target ancestors');assert.equal(await list.locator('.record.active').first().getAttribute('data-event-id'),relatedId);assert(await list.locator('.record.active').first().isVisible());
+ await closeAll();await search.fill('木人试招');await tree('wood').locator('[data-event-id]').first().click();await search.fill('');await page.evaluate(id=>GCSProject.selectEvent(id),ids.wood[1]);await page.evaluate(id=>GCSProject.selectEvent(id),ids.wood[0]);
+ await page.getByRole('button',{name:'编辑剧本',exact:true}).click();await page.locator('.story-reading > .event-script-row').first().click();const draft=page.locator('#editor textarea[data-event-line]').first();await draft.fill((await draft.inputValue())+'〔折叠验收草稿〕');
+ const snapshot=await expanded();await search.fill('夜晚');page.once('dialog',d=>d.dismiss());await tree('mother-care').locator('[data-event-id]').first().click();assert.equal(await page.evaluate(()=>__directoryTest.s.eventWorkspace.manifest.id),ids.wood[0]);assert(await page.evaluate(()=>__directoryTest.s.eventWorkspace.changes.length)>0);
+ await search.fill('');assert.deepEqual(await expanded(),snapshot,'cancelled navigation preserves expansion');await search.fill('夜晚');page.once('dialog',d=>d.accept());await tree('mother-care').locator('[data-event-id]').first().click();assert.equal(await page.evaluate(()=>__directoryTest.s.eventWorkspace.changes.length),0);await search.fill('');assert.deepEqual(await expanded(),snapshot);
+ await closeAll();await toggle(bucket('cycle1'));await page.locator('[data-story-arrange]').click();await bucket('cycle1').locator('[data-story-root]').first().locator('[data-story-move="1"]').click();assert.deepEqual(await expanded(),['cycle1'],'manual sort redraw preserves disclosure state');await page.locator('[data-story-order-reset]').click();await page.locator('[data-story-arrange]').click();
+ await closeAll();await screenshot('search-cleared-restored');await page.setViewportSize({width:1280,height:800});await screenshot('directory-collapsed-1280');await page.setViewportSize({width:680,height:900});await screenshot('directory-collapsed-narrow');await page.setViewportSize({width:1600,height:1050});
+ await reload();assert.deepEqual(await expanded(),[]);assert.equal(await page.locator('#list-count').innerText(),'32 事件 · 60 来源');
+ assert.deepEqual(errors,[]);
+ console.log('STORY_FOLDING_BROWSER_PASS: first visit; categories/parents; refresh open/closed; search and parent/source selection restore; necessary ancestor reveal; manual override; editor redraw; draft reject/accept; sort; 32 stories / 60 sources / 32 time badges; 3 viewport screenshots; no page errors.');
+};

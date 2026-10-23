@@ -24,6 +24,9 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
    window.GCSProject={getState:()=>s,selectEvent:id=>{s.eventWorkspace=s.eventWorkspace.selectEvent(id);window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind:'connection'}}));},report:message=>{throw Error(message);}};
   },files);await connect();await page.locator('[data-module=events]').click();
 
+  if(process.argv.includes('--folding')){await require('./verify-story-folding-browser.cjs')({page,connect,screens,errors});return;}
+  // The full historical acceptance explicitly opens categories, as a user now must.
+  for(const group of await page.locator('#record-list > details:not([open])').all())await group.locator(':scope > summary').click();
   const entries=page.locator('#record-list [data-event-id]'),search=page.locator('#search'),parent=id=>page.locator('[data-story-select="story:'+id+'"]');
   const data=await page.evaluate(()=>{const r=window.__directoryTest.s.eventWorkspace.eventRecords,m=GCSEventStories.build(r);return {ids:r.map(x=>x.manifest.id),count:m.storyCount,sources:m.sourceCount,story:m.storySourceCount,groups:m.allStories.filter(s=>s.grouped).map(s=>[s.title,s.sourceIds.length]),parentIds:m.allStories.filter(s=>s.grouped).map(s=>s.id),cap:['full','text','readonly'].map(c=>r.filter(x=>x.capability===c).length)};});
   assert.deepEqual([data.count,data.sources,data.story],[32,60,47]);assert.deepEqual(data.cap,[14,33,13]);assert.equal(new Set(await entries.evaluateAll(ns=>ns.map(n=>n.dataset.eventId))).size,60);assert.equal(await page.locator('#list-count').innerText(),'32 事件 · 60 来源');console.log('REAL_GROUPS '+JSON.stringify(data.groups));
