@@ -71,7 +71,7 @@ function render(editor,preview){
   parent.append(row);
  }
  function readingInput(changed=true){refresh();renderList($('search')?.value||'');if(changed)change('event-input');}
- if(useReader){w.readingCards=s.records||[];visible=root.GCSEventReadingView.render({editor,script,w,view,editing:view.editing,locked,redraw,renderLine,onInput:readingInput});}
+ if(useReader){w.readingCards=s.records||[];visible=root.GCSEventReadingView.render({editor,script,w,view,editing:view.editing,locked,redraw,renderLine,advanced,onInput:readingInput});}
  else if(root.GCSEventReadingView&&!visible){script.append(el('p','这段剧情按顺序播放，没有可展开的分支。请返回剧情阅读。','hint'));visible=new Set();}
  else current.forEach((_,index)=>{if(!visible||visible.has(index))renderLine(index);});
  editor.append(advanced);
