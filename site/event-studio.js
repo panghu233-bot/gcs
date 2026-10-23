@@ -7,8 +7,8 @@ function change(kind='event-draft'){window.dispatchEvent(new CustomEvent('gcs-pr
 function renderList(query=''){
  const w=work(),records=w?.eventRecords|| (w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines}]:[]),found=records.filter(r=>JSON.stringify([r.manifest.id,r.manifest.title,r.lines]).toLowerCase().includes(query.toLowerCase()));
  $('list-count').textContent=found.length+' / '+records.length;$('library-en').textContent='GAME / 真实事件';$('record-list').replaceChildren();
- for(const r of found){const selected=r.manifest.id===w?.manifest.id,branchEditing=selected&&w.branch?.enabled,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=r.capability||(r.editable?'full':'readonly');b.title=r.manifest.title+' · '+({full:'完整编辑',text:'仅文字编辑',readonly:'只读'}[b.dataset.capability]);b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
-  b.append(el('span',r.capability==='text'?'✎':r.editable?'☷':'🔒','record-symbol'),el('span',r.manifest.title+' · '+r.lines.length+' 句'+(branchEditing?' · 选择结构':r.capability==='text'?' · 仅文字':r.editable?' · 完整编辑':' · 只读')+(selected&&w.changes.length?' · 未应用':''),'record-title'));
+ for(const r of found){const selected=r.manifest.id===w?.manifest.id,branchEditing=selected&&w.branch?.enabled,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=r.capability||(r.editable?'full':'readonly');b.title=(root.GCSEventReading?.title(r.manifest)||r.manifest.title)+' · '+({full:'完整编辑',text:'仅文字编辑',readonly:'只读'}[b.dataset.capability]);b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
+  b.append(el('span',r.capability==='text'?'✎':r.editable?'☷':'🔒','record-symbol'),el('span',(root.GCSEventReading?.title(r.manifest)||r.manifest.title)+' · '+r.lines.filter(line=>!line.kind||line.kind==='dialogue').length+' 句'+(branchEditing?' · 选择结构':r.capability==='text'?' · 仅文字':r.editable?' · 完整编辑':' · 只读')+(selected&&w.changes.length?' · 未应用':''),'record-title'));
   b.onclick=()=>{if(selected||b.disabled)return;if(w.changes.length&&!window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？'))return;try{root.GCSProject.selectEvent(r.manifest.id);}catch(e){root.GCSProject.report(e.message);}};$('record-list').append(b);
  }
 }
@@ -20,33 +20,36 @@ function render(editor,preview){
  if(w.readOnly)view.editing=false;
  const renderToken=++view.renderToken;
  const locked=()=>w.locked||w.blocked||state().workspace?.locked;
- const heading=el('div',undefined,'editor-heading'),title=el('div');title.append(el('div',view.editing?'编辑模式 · 内存草稿':'阅读模式','breadcrumb'),el('h2',w.manifest.title));heading.append(title);editor.append(heading);
+ const heading=el('div',undefined,'editor-heading'),title=el('div');title.append(el('div',view.flowOpen?'流程图':view.editing?'编辑模式 · 内存草稿':'阅读模式','breadcrumb'),el('h2',root.GCSEventReading?.title(w.manifest)||w.manifest.title));heading.append(title);editor.append(heading);
  function button(text,fn){const b=el('button',text);b.disabled=!!locked();b.onclick=()=>{if(locked())return;try{return fn();}catch(e){root.GCSProject.report(e.message);}};return b;}
  function redraw(focus=false){render(editor,preview);renderList($('search')?.value||'');change();if(focus)editor.querySelector?.('textarea')?.focus();}
- const tools=el('div',undefined,'card-edit-tools');editor.append(tools);
+ if(w.blocked)editor.append(el('p','保存没有完成，请先检查备份并恢复，再继续编辑。','notice'));
+ const tools=el('div',undefined,'card-edit-tools'+(root.GCSEventReadingView?' event-reading-tools':''));editor.append(tools);
  if(!w.readOnly)tools.append(button(view.editing?'完成编辑':'编辑剧本',()=>{view.editing=!view.editing;redraw();}));
  const previewToggle=button('演出预览',()=>{view.previewOpen=!view.previewOpen;redraw();});previewToggle.setAttribute('aria-expanded',String(view.previewOpen));previewToggle.setAttribute('aria-controls','preview');tools.append(previewToggle);
+ if(root.GCSEventReadingView)tools.append(button(view.flowOpen?'返回剧情阅读':'查看流程图',()=>{view.flowOpen=!view.flowOpen;redraw();editor.scrollTop=0;}));
  let undo,redo,reset,review,restore;
  if(view.editing){
   undo=button('撤销一步',()=>{w.undo();redraw();});redo=button('重做',()=>{w.redo();redraw();});reset=button('撤销未应用修改',()=>{w.discard();redraw();});
   review=button('查看差异并应用',()=>open(w));restore=button('从备份恢复',()=>selectRestore(w));tools.append(undo,redo,reset,review,restore);
  }
- const status=el('p',undefined,'hint');status.setAttribute('role','status');editor.append(status);
+ const advanced=el('details',undefined,'event-advanced');advanced.append(el('summary','高级信息'));
+ const status=el('p',undefined,'hint');status.setAttribute('role','status');advanced.append(status);
  const script=el('div',undefined,'event-script');editor.append(script);
- const origin=el('p',w.manifest.sourcePath+' / '+(w.manifest.className?w.manifest.className+'.':'')+w.manifest.functionName+(w.manifest.entryPath?' · 执行入口：'+w.manifest.entryPath:' · 执行入口未确认'),'record-id');editor.insertBefore(origin,script);
- if(w.textOnly)editor.append(el('p',w.branch?.enabled?'文字与选择结构编辑：'+w.branch.reason:'仅文字编辑：'+w.reason+(w.manifest.reference?' 已确认引用链：'+w.manifest.reference:''),'notice'));
- if(w.readOnly){editor.append(el('p','只读：'+w.reason+'。下面仅展示可直接确认的字面量对白；完整配置请展开源码，不将片段顺序当作实际播放顺序。','notice'));}
- if(w.rawSource){const details=el('details'),summary=el('summary','查看真实源配置');details.append(summary,el('pre',w.rawSource,'event-text'));editor.append(details);}
- if(w.discoveryErrors?.length)editor.append(el('p','部分来源无法读取：'+w.discoveryErrors.join('；'),'notice'));
- const visible=root.GCSEventFlowView?.render({editor,script,w,view,editing:view.editing,locked,redraw,refresh});
+ const origin=el('p',w.manifest.sourcePath+' / '+(w.manifest.className?w.manifest.className+'.':'')+w.manifest.functionName+(w.manifest.entryPath?' · 执行入口：'+w.manifest.entryPath:' · 执行入口未确认'),'record-id');advanced.append(origin);
+ if(w.textOnly)advanced.append(el('p',w.branch?.enabled?'文字与选择结构编辑：'+w.branch.reason:'仅文字编辑：'+w.reason+(w.manifest.reference?' 已确认引用链：'+w.manifest.reference:''),'notice'));
+ if(w.readOnly){advanced.append(el('p','只读：'+w.reason+'。下面仅展示可直接确认的字面量对白；完整配置请展开源码，不将片段顺序当作实际播放顺序。','notice'));}
+ if(w.rawSource){const details=el('details'),summary=el('summary','查看真实源配置');details.append(summary,el('pre',w.rawSource,'event-text'));advanced.append(details);}
+ if(w.discoveryErrors?.length)advanced.append(el('p','部分来源无法读取：'+w.discoveryErrors.join('；'),'notice'));
+ const useReader=!!root.GCSEventReadingView&&!view.flowOpen;let visible;
+ if(!useReader)visible=root.GCSEventFlowView?.render({editor,script,w,view,editing:view.editing,locked,redraw,refresh,advanced});
  const current=w.lines;
- current.forEach((line,index)=>{
-  if(visible&&!visible.has(index))return;
+ function renderLine(index,parent=script,{compact=false,repeatedSpeaker=false}={}){const line=current[index];if(!line)return;
   const selected=w.selectedIndex===index,segmentEditing=!!visible&&view.editing;
   // Use a non-button container for the active row so its inputs and buttons remain independent.
   const row=el(view.editing&&!selected&&!segmentEditing?'button':'article',undefined,'event-script-row'+(selected?' selected':''));
-  row.dataset.textKind=line.kind||'dialogue';if(line.slotId)row.dataset.slotId=line.slotId;row.append(el('span',(index+1)+'. '+line.speaker,'event-script-speaker'));
-  if(w.textOnly)row.append(el('p',line.context+' · 源码行 '+line.line+' · '+(line.editable?'文字可编辑':'文字只读：'+line.reason),'hint'));
+  row.dataset.textKind=line.kind||'dialogue';if(line.slotId)row.dataset.slotId=line.slotId;if(compact&&repeatedSpeaker)row.className+=' repeated-speaker';if(compact&&!line.speaker)row.className+=' narration';row.append(el('span',compact?(line.kind==='option'?'选项文字':line.kind==='prompt'?'选择提示':line.speaker==='【动态说话人】'?'角色':line.speaker):(index+1)+'. '+line.speaker,'event-script-speaker'));
+  if(w.textOnly&&!compact)row.append(el('p',line.context+' · 源码行 '+line.line+' · '+(line.editable?'文字可编辑':'文字只读：'+line.reason),'hint'));
   if(!view.editing||!selected&&!segmentEditing){
    if(view.editing){row.type='button';row.disabled=!!locked();}else{row.setAttribute('role','button');row.setAttribute('tabindex','0');}
    row.setAttribute('aria-pressed',String(selected));row.onclick=()=>{if(locked()||w.selectedIndex===index)return;w.select(index);redraw(view.editing);};
@@ -62,16 +65,22 @@ function render(editor,preview){
    const remove=button('删除',()=>{w.remove(index);redraw(true);});remove.disabled=!!locked()||current.length===1;
    const up=button('上移',()=>{w.move(index,-1);redraw(true);}),down=button('下移',()=>{w.move(index,1);redraw(true);});up.disabled=!!locked()||index===0;down.disabled=!!locked()||index===current.length-1;
    actions.append(button('前插',()=>{w.insert(index);redraw(true);}),button('后插',()=>{w.insert(index,true);redraw(true);}),button('复制',()=>{w.duplicate(index);redraw(true);}),remove,up,down);row.append(actions);}
-  }else row.append(el('p',line.text||'（空白对白）','event-script-text'));
-  if(w.readOnly)row.append(el('p','左：'+(line.left??'未解析')+' / 右：'+(line.right??'未解析')+' / 表情：'+(line.mood??'未解析'),'hint'));
-  script.append(row);
- });
- if(view.editing)editor.append(el('p',w.branch?.enabled?'可在选择节点增删、排序选项并连接到已有后续标签；对白分别修改。战斗、奖励、标签和演出配置保持锁定。':w.textOnly?'仅开放已确认的已有文字。对白、选择提示、选项分别绑定源码身份；不能增删、排序或改变人物、演出、奖励和跳转。':'新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情可在展开的演出面板中逐句编辑，审阅全部差异并备份后可安全应用。','hint'));
+  }else row.append(el('p',compact?root.GCSEventReading.safeText(line):line.text||'（空白对白）','event-script-text'));
+  if(w.readOnly&&!compact)row.append(el('p','左：'+(line.left??'未解析')+' / 右：'+(line.right??'未解析')+' / 表情：'+(line.mood??'未解析'),'hint'));
+
+  parent.append(row);
+ }
+ function readingInput(changed=true){refresh();renderList($('search')?.value||'');if(changed)change('event-input');}
+ if(useReader){w.readingCards=s.records||[];visible=root.GCSEventReadingView.render({editor,script,w,view,editing:view.editing,locked,redraw,renderLine,onInput:readingInput});}
+ else if(root.GCSEventReadingView&&!visible){script.append(el('p','这段剧情按顺序播放，没有可展开的分支。请返回剧情阅读。','hint'));visible=new Set();}
+ else current.forEach((_,index)=>{if(!visible||visible.has(index))renderLine(index);});
+ editor.append(advanced);
+ if(view.editing)advanced.append(el('p',w.branch?.enabled?'可在选择节点增删、排序选项并连接到已有后续标签；对白分别修改。战斗、奖励、标签和演出配置保持锁定。':w.textOnly?'仅开放已确认的已有文字。对白、选择提示、选项分别绑定源码身份；不能增删、排序或改变人物、演出、奖励和跳转。':'新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情可在展开的演出面板中逐句编辑，审阅全部差异并备份后可安全应用。','hint'));
  let previewKey=null,previewText=null;
  function updatePreview(){
   if(!view.previewOpen){preview.replaceChildren();return;}
   if(visible&&visible.size===0){preview.replaceChildren(el('p','当前为结束、条件或跳转节点，没有独立对白演出。请查看节点的真实配置或继续查看后续。','notice'));return;}
-  const line=w.lines[w.selectedIndex];if(!line){preview.replaceChildren(el('p','此来源没有可直接解析的对白，请查看真实源配置。','notice'));return;}if((w.textOnly&&line.kind!=='dialogue')){preview.replaceChildren(el('p',line.speaker+'：'+line.text,'event-text'),el('p',line.context,'hint'));return;}if((w.readOnly||w.textOnly)&&['left','right','mood'].some(k=>typeof line[k]!=='string'||line[k]==='<inherit>')){preview.replaceChildren(el('p','当前句演出依赖运行时配置，请查看源码；不推断立绘。','notice'));return;}const key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
+  const line=w.lines[w.selectedIndex];if(!line){preview.replaceChildren(el('p','此来源没有可直接解析的对白，请查看真实源配置。','notice'));return;}if((w.textOnly&&line.kind!=='dialogue')){if(useReader)preview.replaceChildren(el('p','选择的后续会在正文中展开；点击一句对白可以查看对应演出。','hint'));else preview.replaceChildren(el('p',line.speaker+'：'+line.text,'event-text'),el('p',line.context,'hint'));return;}if((w.readOnly||w.textOnly)&&['left','right','mood'].some(k=>typeof line[k]!=='string'||line[k]==='<inherit>')){preview.replaceChildren(el('p','这句对白的演出需由游戏决定，暂不显示立绘。','notice'));return;}const key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
   if(key===previewKey&&previewText){previewText.textContent=line.text||'（空白对白）';return;}
   previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));
   const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p',w.textOnly?'图片仅从本地项目读取。人物和演出配置保持锁定；选择结构权限在选择节点单独显示。':'图片仅从所选本地项目读取。演出修改先保留草稿，审阅并备份后写入游戏。','notice'));

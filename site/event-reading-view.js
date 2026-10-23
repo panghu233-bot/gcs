@@ -1,0 +1,33 @@
+/* A continuous script, with choices in the text. Uses existing scoped edit operations. */
+(function(root){
+'use strict';
+const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+function render({editor,script,w,view,editing,locked,redraw,renderLine,onInput}){
+ const api=root.GCSEventReading,m=api.model(w);view.readChoices??={};const route=api.trace(m,view.readChoices),visible=new Set();script.className='event-script story-reading';script.dataset.reading='true';
+ function pick(id,index,target,slot){if(locked())return;const choices={};for(const item of route.items){if(item.node?.id===id)break;if(item.node&&view.readChoices[item.node.id]!==undefined)choices[item.node.id]=view.readChoices[item.node.id];}choices[id]=index;view.readChoices=choices;
+  let next=target;const seen=new Set();while(next&&!seen.has(next)){seen.add(next);const n=m.nodes?.get(next);if(n?.kind==='dialogue'&&n.indices.length){slot=n.indices[0];break;}const edges=m.edges?.filter(e=>e.from===next);if(edges?.length!==1)break;next=edges[0].to;}if(Number.isInteger(slot))w.select(slot);redraw();editor.querySelector('[data-reading-choice="'+id+'"]')?.scrollIntoView({block:'start',behavior:'instant'});
+ }
+ function field(parent,index,caption,getValue,setValue){const label=el('label',caption,'field story-edit-field'),input=el('textarea');input.value=getValue();input.maxLength=20000;input.dataset.readingField=caption;input.setAttribute('aria-label',caption);input.disabled=!!locked();const resize=()=>{input.style.height='auto';input.style.height=Math.max(48,input.scrollHeight)+'px';};input.onfocus=()=>{if(Number.isInteger(index))w.select(index);onInput(false);};input.oninput=()=>{try{setValue(input.value);resize();onInput();}catch(e){root.GCSProject.report(e.message);}};label.append(input);parent.append(label);root.requestAnimationFrame?.(resize);return input;}
+ function dialogue(index,parent=script,repeated=false){visible.add(index);renderLine(index,parent,{compact:true,repeatedSpeaker:repeated});}
+ let previousSpeaker=null;
+ for(const item of route.items){
+  if(item.kind==='dialogue'){const row=w.lines[item.index];dialogue(item.index,script,previousSpeaker===row.speaker);previousSpeaker=row.speaker;continue;}
+  previousSpeaker=null;
+  if(item.kind==='choice'){
+   const n=item.node,box=el('section',undefined,'story-choice');box.dataset.readingChoice=n.id;box.append(el('span','你的选择','story-choice-caption'));
+   const prompt=n.promptIndex===undefined?null:w.lines[n.promptIndex];if(editing&&prompt?.editable){visible.add(n.promptIndex);field(box,n.promptIndex,'选择提示',()=>w.lines[n.promptIndex].text,value=>w.set(n.promptIndex,value));}else box.append(el('p',n.prompt,'story-prompt'));
+   if(!n.options.length)box.append(el('p','可用选项会随游戏状态变化，暂时无法展开。','story-limit'));
+   n.options.forEach((o,index)=>{const row=el('div',undefined,'story-option'+(item.selected===index?' chosen':'')),slot=o.slotIndex===null?null:w.lines[o.slotIndex],editable=!w.readOnly&&(w.branch?.enabled||slot?.editable),read=el('button',editing&&editable?'阅读此分支':o.text,'story-option-button');read.type='button';read.dataset.readerOption=String(index);read.dataset.readerChoice=n.id;read.setAttribute('aria-pressed',String(item.selected===index));read.disabled=!!locked();read.onclick=()=>pick(n.id,index,o.target,o.slotIndex);
+    if(editing&&editable){if(o.slotIndex!==null&&o.slotIndex!==undefined)visible.add(o.slotIndex);field(row,o.slotIndex,'选项 '+(index+1)+' 文字',()=>w.branch?.enabled?w.branch.options(n.id)[index].text:w.lines[o.slotIndex].text,value=>{if(w.branch?.enabled){const options=w.branch.options(n.id);options[index].text=value;w.branch.set(n.id,options);}else w.set(o.slotIndex,value);});}row.append(read);
+    const req=api.requirement(o.fields?.requires_stat);if(req)row.append(el('small','需要'+req.stat+'达到'+req.min,'story-option-note'));if(!o.target)row.append(el('small','后续尚未确认','story-option-note'));box.append(row);
+   });script.append(box);continue;
+  }
+  if(item.kind==='outcome'){const box=el('section',undefined,'story-choice story-outcome');box.dataset.readingChoice=item.node.id;box.append(el('p',item.text,'story-prompt'));item.options.forEach((o,index)=>{const button=el('button',o.text,'story-option-button'+(item.selected===index?' chosen':''));button.dataset.readerOutcome=String(index);button.dataset.readerChoice=item.node.id;button.disabled=!!locked();button.setAttribute('aria-pressed',String(item.selected===index));button.onclick=()=>pick(item.node.id,index,o.target);box.append(button);});script.append(box);continue;}
+  if(item.kind==='external'){const section=el('section',undefined,'story-external');let previous=null;for(const row of item.record.lines){const block=el('article',undefined,'story-external-line');if(row.speaker&&row.speaker!==previous)block.append(el('span',row.speaker,'story-speaker'));block.append(el('p',row.text,'story-dialogue-text'));section.append(block);previous=row.speaker;}if(editing){const b=el('button','编辑这段战后剧情');b.disabled=!!locked();b.onclick=()=>{if(w.changes.length&&!window.confirm('切换前请先保存当前修改；继续会丢弃尚未保存的草稿。是否继续？'))return;root.GCSProject.selectEvent(item.record.manifest.id);};section.append(b);}script.append(section);continue;}
+  script.append(el('p',item.kind==='end'?'本段故事结束':item.text,item.kind==='end'?'story-ending':item.kind==='limit'?'story-limit':'story-note'));
+ }
+ const groups=api.fragments(m);if(groups.length){const drawer=el('details',undefined,'story-fragments');drawer.append(el('summary',m.verified?'另有未接入当前故事的片段':'查看可独立阅读的片段'),el('p','这些片段尚不能确认与正文的连接，单独保留，不作为故事开场或选项后续。','story-note'));groups.forEach((indices,i)=>{const section=el('details',undefined,'story-fragment');section.append(el('summary','片段 '+(i+1)));let speaker=null;for(const index of indices){dialogue(index,section,speaker===w.lines[index].speaker);speaker=w.lines[index].speaker;}drawer.append(section);});script.append(drawer);}
+ visible.refresh=()=>{};return visible;
+}
+root.GCSEventReadingView={render};
+})(window);

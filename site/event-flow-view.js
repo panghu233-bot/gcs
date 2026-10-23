@@ -3,7 +3,7 @@
 'use strict';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const names={dialogue:'对白',choice:'玩家选择',condition:'条件 · 只读',combat:'战斗 · 只读',end:'结束',anchor:'汇合 / 标签',jump:'跳转',scene:'场景',unknown:'未知 · 只读',external:'外部回调 · 只读'};
-function render({editor,script,w,view,editing,locked,redraw}){
+function render({editor,script,w,view,editing,locked,redraw,advanced}){
  if(!w.originalBytes&&!w.rawSource)return null;
  let g;try{g=root.GCSEventFlow.read(w.originalBytes||new TextEncoder().encode(w.rawSource),w.manifest);}catch{return null;}
  if(!g.branched||!g.nodes.some(n=>n.indices.length))return null;
@@ -65,6 +65,7 @@ function render({editor,script,w,view,editing,locked,redraw}){
  if(!selected.indices.length)detail.append(el('p','此节点没有可独立编辑的对白。配置保持只读。','hint'));
  const visible=new Set(selected.indices.filter(i=>!(w.branch?.enabled&&w.lines[i]?.kind==='option')));
  visible.refresh=()=>{for(const [id,{button,snippet}] of snippets){const n=nodes.get(id),label=currentLabel(n);snippet.textContent=label.slice(0,58)+(label.length>58?'…':'');button.title=label+(n.kind==='dialogue'?' · 共'+n.indices.length+'句，点击阅读全文':'');}};
+ if(advanced)for(const info of [...section.querySelectorAll('.event-flow-detail details, .event-flow-detail>.hint')])advanced.append(info);
  visible.refresh();return visible;
 }
 root.GCSEventFlowView={render};
