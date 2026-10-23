@@ -34,3 +34,16 @@ test('direct restore rechecks backup metadata, source and entry before preparati
 test('UI: ordinary edits stay disabled until external backup is verified',async()=>{const x=await uiSetup();x.w.set(1,'普通修改');x.render();await x.button(x.editor,'查看差异并应用').onclick();const d=x.body.children[0],apply=x.button(d,'授权写入并应用');assert(apply.disabled);await apply.onclick();assert.equal(x.fs.writes.length,0);await x.button(d,'选择项目外目录并备份').onclick();assert(!apply.disabled);assert(x.fs.writes.some(p=>p.startsWith('/backups/')));await apply.onclick();assert.equal(x.w.texts[1],'普通修改');});
 test('UI: failed memory rollback locks writes and warns without overwriting external content',async()=>{const x=await uiSetup();await x.button(x.editor,'从备份恢复').onclick();const d=x.body.children[0],apply=x.button(d,'确认恢复');x.fs.setHook((at,p)=>{if(at==='after'&&p===x.source){x.fs.data.set(p,enc('external'));throw Error('post commit');}});await apply.onclick();assert(x.w.blocked);assert(apply.disabled);assert(!x.w.locked);assert.deepEqual(x.fs.data.get(x.source),enc('external'));assert(descendants(d).some(n=>n.textContent.includes('内存快照')));assert(!x.fs.writes.some(p=>p.startsWith('/backups/')));});
 test('UI: stale restore review reports conflict and never writes project',async()=>{const x=await uiSetup();await x.button(x.editor,'从备份恢复').onclick();x.fs.data.set(x.base+'/restore.json',enc('external'));const d=x.body.children[0];await x.button(d,'确认恢复').onclick();assert.equal(x.fs.writes.length,0);assert(descendants(d).some(n=>n.textContent.includes('所选备份已变化')));assert(!x.w.locked);});
+
+
+test('UI: full review lists insertion, deletion, movement, text and automatic portrait sync before writing',async()=>{
+ const x=await uiSetup();x.w.insert(0);x.w.set(0,'新增顾飞雪');x.w.setPerformance(0,'speaker','顾飞雪');x.w.setPerformance(2,'speaker','顾飞雪');x.w.setPerformance(2,'left','顾清寒');x.w.setPerformance(2,'mood','shy');x.w.set(2,'修改文字');x.w.remove(4);x.w.move(5,-1);x.w.duplicate(1);x.render();
+ const desired=x.w.lines.map(({speaker,text,left,right,mood})=>({speaker,text,left,right,mood}));assert(!x.button(x.editor,'查看差异并应用').disabled);x.button(x.editor,'查看差异并应用').onclick();const d=x.body.children[0];assert(d.open);const titles=descendants(d).filter(n=>n.tag==='strong').map(n=>n.textContent);
+ for(const label of ['新增','删除','顺序调整','文字','说话人','左侧立绘','右侧立绘','表情'])assert(titles.some(t=>t.includes(label)),label);
+ assert.equal(x.fs.writes.length,0);const apply=x.button(d,'授权写入并应用');assert(apply.disabled);await x.button(d,'选择项目外目录并备份').onclick();assert(!apply.disabled);await apply.onclick();assert(!x.w.changes.length);assert(!x.w.canUndo);assert.deepEqual((await event.fromHandle(x.fs.project)).lines.map(({speaker,text,left,right,mood})=>({speaker,text,left,right,mood})),desired);
+ assert(descendants(d).some(n=>n.textContent.includes('全部对白及演出字段')));
+});
+
+test('UI: unrepresentable blank narration explains the limitation and cannot open a save review',async()=>{
+ const x=await uiSetup();x.w.setPerformance(0,'speaker','');x.render();x.button(x.editor,'查看差异并应用').onclick();assert(!x.body.children[0].open);assert.match(x.reports.at(-1),/无法可靠清空立绘/);assert.equal(x.fs.writes.length,0);
+});

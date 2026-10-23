@@ -26,9 +26,9 @@ test('undo/redo restore text, order, deletion, selection; new actions clear redo
  w.discard();assert(!w.canUndo);assert(!w.canRedo);
 });
 
-test('all structural drafts reject text patch plans and writer preparation without file writes',async()=>{
+test('structural drafts produce bounded plans; legacy text-only arguments still reject without file writes',async()=>{
  for(const mutate of [w=>w.insert(0),w=>w.insert(6,true),w=>w.duplicate(1),w=>w.remove(0),w=>w.move(1,-1),w=>w.move(1,1)]){
-  const files=fixture(),w=event.parse(files),mem=memoryFS();mutate(w);assert(w.changes.length);assert(w.hasStructuralChanges);assert.throws(()=>w.plan(),/结构修改/);
+  const files=fixture(),w=event.parse(files),mem=memoryFS();mutate(w);assert(w.changes.length);assert(w.hasStructuralChanges);assert.equal(w.plan().kind,'function-body');
   await assert.rejects(writer.prepare({project:mem.project,backupParent:mem.backup,originalBytes:w.originalBytes,entryBytes:w.entryBytes,changes:w.changes}));assert.equal(mem.writes.length,0);
   w.undo();assert(!w.hasStructuralChanges);w.set(0,'文字可继续保存');assert(w.plan().bytes);
  }
@@ -60,9 +60,9 @@ test('UI defaults to clean reading; editing selects rows, types continuously and
  const x=ui();assert(x.find('编辑剧本'));assert.equal(descendants(x.editor).filter(n=>n.tag==='textarea').length,0);assert(!x.find('前插'));assert.equal(descendants(x.editor).filter(n=>n.tag==='article').length,7);
  x.find('编辑剧本').onclick();const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='第一';input.oninput();input.value+='句';input.oninput();assert.equal(x.w.texts[0],'第一句');assert.equal(descendants(x.editor).find(n=>n.tag==='textarea'),input);assert.equal(x.events.at(-1).detail.kind,'event-input');
  const row=descendants(x.editor).filter(n=>n.className?.includes('event-script-row'))[3];row.onclick();assert.equal(x.w.selectedIndex,3);
- x.find('后插').onclick();assert.equal(x.w.lines.length,8);assert.equal(x.w.selectedIndex,4);assert(x.find('查看差异并应用').disabled);x.find('查看差异并应用').onclick();assert(!x.body.children[0].open);
+ x.find('后插').onclick();assert.equal(x.w.lines.length,8);assert.equal(x.w.selectedIndex,4);assert(!x.find('查看差异并应用').disabled);x.find('查看差异并应用').onclick();assert(x.body.children[0].open);
  x.find('完成编辑').onclick();assert(x.find('编辑剧本'));assert.equal(descendants(x.editor).filter(n=>n.tag==='article').length,8);assert.equal(descendants(x.editor).filter(n=>n.tag==='textarea').length,0);assert.equal(x.w.texts[0],'第一句');
- x.find('编辑剧本').onclick();x.find('撤销一步').onclick();assert.equal(x.w.lines.length,7);assert(!x.find('查看差异并应用').disabled);x.find('重做').onclick();assert.equal(x.w.lines.length,8);assert(x.find('查看差异并应用').disabled);
+ x.find('编辑剧本').onclick();x.find('撤销一步').onclick();assert.equal(x.w.lines.length,7);assert(!x.find('查看差异并应用').disabled);x.find('重做').onclick();assert.equal(x.w.lines.length,8);assert(!x.find('查看差异并应用').disabled);
 });
 
 test('UI enables only bounded row actions; copies are independent and text-only review remains available',()=>{
@@ -89,7 +89,7 @@ test('selected dialogue owns inline controls; switching selection moves the edit
  assert.equal(selected(),row);assert.equal(descendants(selected()).find(n=>n.tag==='textarea'),input);assert.equal(input.selectionStart,2);assert.equal(input.selectionEnd,2);
  input.value='第二句继续输入';input.selectionStart=4;input.selectionEnd=6;input.oninput();assert.equal(input.selectionStart,4);assert.equal(input.selectionEnd,6);
  rows()[5].onclick();assertInline(5);rows()[1].onclick();assertInline(1);assert.equal(descendants(selected()).find(n=>n.tag==='textarea').value,'第二句继续输入');
- x.find('后插').onclick();assertInline(2);assert(x.w.hasStructuralChanges);assert(x.find('查看差异并应用').disabled);
+ x.find('后插').onclick();assertInline(2);assert(x.w.hasStructuralChanges);assert(!x.find('查看差异并应用').disabled);
  x.find('撤销一步').onclick();assertInline(1);x.find('重做').onclick();assertInline(2);
 });
 
@@ -126,13 +126,13 @@ test('performance panel edits four independent fields only in edit mode and prev
  x.find('演出预览').onclick();await flush();assert.equal(Object.keys(fields()).length,0);
  x.find('编辑剧本').onclick();await flush();assert.deepEqual(Object.keys(fields()),['speaker','left','right','mood']);assert(fields().left.children.some(o=>o.value===''));assert(fields().right.children.some(o=>o.value===''));
  const old=x.w.lines,stage=x.preview.children.find(n=>n.className==='event-performance-stage'),settings=x.preview.children.find(n=>n.className==='event-performance-settings');assert(x.preview.children.indexOf(settings)<x.preview.children.indexOf(stage));
- await choose('speaker','顾飞雪');assert.equal(x.w.lines[0].right,'顾飞雪');assert(descendants(x.preview).some(n=>n.tag==='img'&&n.src==='blob:顾飞雪:normal'));assert.equal(x.w.lines[0].left,old[0].left);assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(x.find('查看差异并应用').disabled);assert(x.find('从备份恢复').disabled);
+ await choose('speaker','顾飞雪');assert.equal(x.w.lines[0].right,'顾飞雪');assert(descendants(x.preview).some(n=>n.tag==='img'&&n.src==='blob:顾飞雪:normal'));assert.equal(x.w.lines[0].left,old[0].left);assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(!x.find('查看差异并应用').disabled);assert(x.find('从备份恢复').disabled);
  await choose('right','顾清寒');await choose('mood','shy');assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(descendants(x.preview).some(n=>n.tag==='img'&&n.src==='blob:顾清寒:shy'));assert.deepEqual(x.w.lines.slice(1),old.slice(1));
  const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='演出与文字草稿';input.selectionStart=3;input.selectionEnd=3;input.oninput();await flush();assert.equal(descendants(x.editor).find(n=>n.tag==='textarea'),input);assert.equal(input.selectionStart,3);assert.equal(fields().mood.value,'shy');
  const rows=()=>descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'));rows()[1].onclick();await flush();assert.equal(fields().right.value,old[1].right);assert.equal(fields().mood.value,'normal');rows()[0].onclick();await flush();assert.equal(fields().mood.value,'shy');
- await choose('left','老人');assert.equal(x.w.lines[0].speaker,'顾飞雪');await choose('left','');assert.equal(x.w.lines[0].left,'');await choose('right','老人');assert(fields().mood.disabled);assert.equal(x.w.lines[0].mood,'shy');assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(x.find('查看差异并应用').disabled);
+ await choose('left','老人');assert.equal(x.w.lines[0].speaker,'顾飞雪');await choose('left','');assert.equal(x.w.lines[0].left,'');await choose('right','老人');assert(fields().mood.disabled);assert.equal(x.w.lines[0].mood,'shy');assert.equal(x.w.lines[0].speaker,'顾飞雪');assert(!x.find('查看差异并应用').disabled);
  x.find('撤销一步').onclick();await flush();assert.equal(fields().right.value,'顾清寒');assert(!fields().mood.disabled);x.find('重做').onclick();await flush();assert.equal(fields().right.value,'老人');
- x.find('完成编辑').onclick();await flush();assert.equal(Object.keys(fields()).length,0);assert(x.w.hasUnsupportedChanges);x.w.discard();x.w.set(0,'仅文字');x.find('编辑剧本').onclick();await flush();assert(!x.find('查看差异并应用').disabled);
+ x.find('完成编辑').onclick();await flush();assert.equal(Object.keys(fields()).length,0);assert(!x.w.hasUnsupportedChanges);x.w.discard();x.w.set(0,'仅文字');x.find('编辑剧本').onclick();await flush();assert(!x.find('查看差异并应用').disabled);
 });
 
 test('late performance-choice responses never attach stale controls to a new selection',async()=>{
