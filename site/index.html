@@ -5,10 +5,11 @@
   <title>Game Content Studio · 内容工作台</title>
   <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="event-flow.css"><link rel="stylesheet" href="event-reading.css">
   <link rel="stylesheet" href="npc-studio.css">
+  <link rel="stylesheet" href="event-directory.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brandmark">G</span><div>Game Content Studio<small>独立内容工作台 <span class="version">VERSION 0.11.1</span></small></div></div>
+    <div class="brand"><span class="brandmark">G</span><div>Game Content Studio<small>独立内容工作台 <span class="version">VERSION 0.12.0</span></small></div></div>
     <div class="project-label"><span class="live-dot"></span> 雾港来信 <span>/ 演示项目 · 数据仅在本机浏览器</span></div>
     <div class="top-actions"><span id="save-state" role="status">正在加载</span><button id="project-open" class="primary">打开游戏项目</button><button id="import-btn">导入演示 JSON</button><button id="export-btn" class="primary" title="导出演示工作区，不包含本地游戏卡牌（Ctrl+S）">↓ 导出演示 JSON</button></div>
   </header>
@@ -25,7 +26,7 @@
     <main id="editor" tabindex="-1"></main>
     <aside id="preview" class="preview"></aside>
   </div>
-  <footer class="statusbar"><span><i></i> <span id="status-text">本地工作区就绪</span></span><span>GCS 0.11.1 <em>·</em> 本地内容工作区</span></footer>
+  <footer class="statusbar"><span><i></i> <span id="status-text">本地工作区就绪</span></span><span>GCS 0.12.0 <em>·</em> 本地内容工作区</span></footer>
   <input id="json-file" type="file" accept="application/json,.json" hidden><input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
   <div id="toast" role="status" aria-live="polite"></div>
   <dialog id="help"><h2>开始编辑你的内容</h2><p>点击「打开游戏项目」选择游戏根文件夹，自动加载卡牌与升级分支。连接后「卡牌设计」直接显示真实卡牌，可编辑确认的字段和分支数值。编辑只作用于内存副本，可查看差异、撤销、导出草稿；点击「应用修改到游戏」并检查差异、选择项目外备份目录及授权写入后才会覆盖两份 JSON。刷新前请导出未应用草稿；未连接时显示演示卡牌。支持文件夹记忆的浏览器会在下次打开时恢复连接，必要时点击「重新授权」。其他浏览器每次只需重新选择整个文件夹。只记住访问句柄，不缓存游戏数据；断开项目会清除该记忆。</p><p>从左侧切换 NPC、剧情和卡牌。NPC 包含人物、出场、英雄玩法与战斗关联标签；NPC 已接入本地养成人物识别与现有 PNG 立绘替换（人物、可找到的立绘、脚本引用和同名敌人）；在「人物形象」选择版本，点击「更换图片」，选择 PNG 后对比新旧图片；先选择项目外备份目录并完成备份校验，再点击「授权写入并替换」。最多 8 MB，单边最多 16384 像素，总像素不超过 6400 万。共用立绘会显示影响人物；缺失图片不能替换。人物资料与事件仍只读。不能识别的内容不使用演示替代。剧情事件连接后自动识别本地养成事件和 Dialogic 时间轴。标记「完整编辑」的直线对白支持文字、增删复制、排序、说话人、左右人物和表情；标记「仅文字」的复杂工厂和分支剧情只允许修改已确认的已有对白、选择提示和选项文字，其他配置保持锁定；动态文字逐项标记只读，完全无法安全定位的来源展示只读原因。修改仅保留在内存，先审阅差异、选择项目外目录完成备份，再授权写入；写后自动重新解析验证。从备份恢复只还原当前事件，保留其他事件的后续修改。切换事件前会提醒未应用草稿。未连接时保留演示工作区；卡牌模块保留原有真实数据编辑与写回。演示表单的修改会在当前浏览器本地自动暂存。</p><ol><li>在 NPC 中修改姓名、背景，点击关联事件进入剧情。</li><li>在剧情中增删、排序对白，设置参与人物和选项目标；点击“试读”亲自选择分支。</li><li>在卡牌中修改属性、所属人物、来源事件和升级目标，右侧卡面同步更新。</li><li>点击“保存 JSON”下载完整项目；在任意浏览器重新导入即可恢复，包括上传的图片。</li></ol><p>图片支持 PNG / JPG / WebP，每张最多 2 MB。图片内嵌在 JSON 中。浏览器本地记录不是文件备份，建议导出 JSON。</p><p><strong>在线版说明：</strong>网页程序公开发布，但你选择的游戏文件只在浏览器本地读取，不会自动上传。修改的演示项目暂存在此浏览器中，不会同步到其他设备或自动写回《凝顾》。请定期导出 JSON 备份；从旧版切换到在线版时，需要先导出再导入。</p><p>演示不包含战斗结算、条件表达式、游戏引擎接入、多人协作或版本管理。试读只演示剧情路径，不执行卡牌奖励。</p><button class="primary" id="close-help">开始创作</button></dialog>
@@ -37,7 +38,7 @@
   <input id="project-folder" type="file" webkitdirectory multiple hidden>
   <script src="model.js"></script><script src="ninggu-adapter.js"></script><script src="card-workspace.js"></script><script src="npc-project.js"></script><script src="gdscript-string-patch.js"></script><script src="event-performance.js"></script><script src="event-text.js"></script><script src="static-dialogue.js"></script>
 <script src="event-flow-contract.js"></script><script src="event-flow.js"></script><script src="event-branches.js"></script><script src="event-conditions.js"></script>
-  <script src="event-reading.js"></script><script src="event-reading-view.js"></script><script src="event-flow-layout.js"></script><script src="event-flow-view.js"></script>
+  <script src="event-directory.js"></script><script src="event-reading.js"></script><script src="event-reading-view.js"></script><script src="event-flow-layout.js"></script><script src="event-flow-view.js"></script>
 <script src="event-catalog.js"></script>
 <script src="event-project.js"></script><script src="game-project.js"></script><script src="vendor/jsonc-parser.js"></script><script src="json-value-patch.js"></script><script src="game-writer.js"></script><script src="apply-controller.js"></script><script src="native-cards.js"></script><script src="npc-studio.js"></script><script src="npc-portrait-writer.js"></script><script src="npc-portrait-controller.js"></script><script src="event-writer.js"></script><script src="event-studio.js"></script><script src="app.js"></script>
 </body>

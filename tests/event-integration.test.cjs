@@ -8,7 +8,7 @@ test('event loading, isolation, refresh permission loss and disconnect clear eve
 });
 test('browser entry loads dependencies before consumers and real events route independently from demo data',()=>{
  const html=fs.readFileSync('site/index.html','utf8'),scripts=[...html.matchAll(/<script src="([^"]+)"/g)].map(x=>x[1]);
- for(const [a,b] of [['gdscript-string-patch.js','event-project.js'],['event-project.js','game-project.js'],['event-project.js','event-writer.js'],['event-writer.js','event-studio.js'],['event-studio.js','app.js']])assert(scripts.indexOf(a)>=0&&scripts.indexOf(a)<scripts.indexOf(b));
+ for(const [a,b] of [['gdscript-string-patch.js','event-directory.js'],['event-directory.js','event-reading.js'],['event-directory.js','event-studio.js'],['gdscript-string-patch.js','event-project.js'],['event-project.js','game-project.js'],['event-project.js','event-writer.js'],['event-writer.js','event-studio.js'],['event-studio.js','app.js']])assert(scripts.indexOf(a)>=0&&scripts.indexOf(a)<scripts.indexOf(b));
  const app=fs.readFileSync('site/app.js','utf8');assert(app.includes('if(realEvents()){renderList();window.GCSEventStudio.render('));assert(app.includes('if(realEvents()){window.GCSEventStudio.renderList(query);return;}'));assert(app.includes('if(realEvents())return;'));
 });
 

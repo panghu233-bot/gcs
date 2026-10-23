@@ -41,17 +41,19 @@ test('boundaries and locks guard every structural and redo operation',()=>{
 });
 
 class Element{
- constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.listeners={};this.disabled=false;this.textContent='';}
+ constructor(tag){this.tag=tag;this.children=[];this.classList={add:()=>{}};this.dataset={};this.listeners={};this.disabled=false;this.textContent='';}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=nodes;}get lastChild(){return this.children.at(-1);}
  insertBefore(node,before){this.children=this.children.filter(n=>n!==node);const i=this.children.indexOf(before);if(i<0)throw Error('Unknown insertion reference');this.children.splice(i,0,node);}
+ scrollIntoView(){this.scrolled=true;}
+ querySelector(selector){return selector==='.record.active'?descendants(this).find(n=>n.className==='record active')||null:null;}
  setAttribute(k,v){this[k]=v;}addEventListener(k,f){this.listeners[k]=f;}showModal(){this.open=true;}close(){this.open=false;this.listeners.close?.();}
 }
 const descendants=n=>[n,...n.children.flatMap(descendants)];
 function ui(initial=null){
  const body=new Element('body'),editor=new Element('main'),preview=new Element('aside'),ids={},events=[];
  const w=initial||event.parse(fixture()),s={connected:true,status:'connected',handle:{},eventWorkspace:w,workspace:{}},listeners={};
- const window={GCSProject:{getState:()=>s,report:()=>{}},GCSEventWriter:writer,addEventListener:(k,f)=>(listeners[k]??=[]).push(f),dispatchEvent:e=>{events.push(e);for(const f of listeners[e.type]||[])f(e);}};
- vm.runInNewContext(fs.readFileSync('site/event-studio.js','utf8'),{window,document:{body,createElement:t=>new Element(t),getElementById:id=>ids[id]??=new Element('div')},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}}});
+ const window={GCSEventDirectory:require('../site/event-directory.js'),GCSProject:{getState:()=>s,report:()=>{}},GCSEventWriter:writer,addEventListener:(k,f)=>(listeners[k]??=[]).push(f),dispatchEvent:e=>{events.push(e);for(const f of listeners[e.type]||[])f(e);}};
+ vm.runInNewContext(fs.readFileSync('site/event-studio.js','utf8'),{window,document:{body,querySelector:()=>null,createElement:t=>new Element(t),getElementById:id=>ids[id]??=new Element('div')},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}}});
  const render=()=>window.GCSEventStudio.render(editor,preview),find=text=>descendants(editor).find(n=>n.tag==='button'&&n.textContent===text);
  render();return {w,s,window,ids,editor,preview,body,find,render,events};
 }
@@ -146,7 +148,7 @@ test('late performance-choice responses never attach stale controls to a new sel
 test('multi-event UI lists and searches real scopes, confirms dirty switches, exposes readonly source and blocks locked selection',async t=>{
  const {multi,find:record,entry}=require('./helpers/synthetic-multi-event.cjs'),{diskFS}=require('./helpers/disk-event.cjs'),files=multi();files[entry]=new TextEncoder().encode(new TextDecoder().decode(files[entry]).replace('CultivationData.SharedEvent.create_branch_lines()','null'));const disk=await diskFS(files);t.after(()=>disk.cleanup());const initial=await event.fromHandle(disk.project),x=ui(initial);let allow=false,confirmations=0;
  x.window.confirm=()=>{confirmations++;return allow;};x.window.GCSProject.selectEvent=id=>{x.s.eventWorkspace=x.s.eventWorkspace.selectEvent(id);x.render();};
- const list=()=>x.window.GCSEventStudio.renderList(''),rows=()=>x.ids['record-list'].children;list();assert.equal(rows().length,5);
+ const list=()=>x.window.GCSEventStudio.renderList(''),rows=()=>descendants(x.ids['record-list']).filter(n=>n.dataset.eventId);list();assert.equal(rows().length,5);
  const id=record(files,'create_day_lines').manifest.id;initial.set(0,'未保存');rows().find(n=>n.dataset.eventId===id).onclick();assert.equal(x.s.eventWorkspace,initial);assert.equal(confirmations,1);
  allow=true;rows().find(n=>n.dataset.eventId===id).onclick();assert.equal(x.s.eventWorkspace.manifest.id,id);assert(x.find('编辑剧本'));list();
  const branch=record(files,'create_branch_lines').manifest.id;rows().find(n=>n.dataset.eventId===branch).onclick();assert(x.s.eventWorkspace.readOnly);assert(!x.find('编辑剧本'));assert(!x.find('查看差异并应用'));assert(descendants(x.editor).some(n=>n.textContent.includes('只读：')));assert(descendants(x.editor).some(n=>n.tag==='pre'&&n.textContent.includes('choice')));

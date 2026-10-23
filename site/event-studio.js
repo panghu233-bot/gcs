@@ -4,13 +4,23 @@
 const dialog=el('dialog');dialog.id='event-dialog';dialog.setAttribute('aria-label','检查并应用真实对白修改');document.body.append(dialog);
 let session=null,busy=false;const state=()=>root.GCSProject.getState(),work=()=>state().eventWorkspace;
 function change(kind='event-draft'){window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind}}));}
+const directory=root.GCSEventDirectory,groupState=new Map();let directoryRecords=null,directorySelected=null,directoryQuery='';
+function selectEvent(id,reveal=false){const w=work();if(!w||id===w.manifest.id||busy||w.locked||w.blocked||state().workspace?.locked)return;if(w.changes.length&&!window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？'))return;try{if(reveal&&$('search').value){$('search').value='';$('search').dispatchEvent(new Event('input',{bubbles:true}));}root.GCSProject.selectEvent(id);}catch(e){root.GCSProject.report(e.message);}}
 function renderList(query=''){
- const w=work(),records=w?.eventRecords|| (w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines}]:[]),found=records.filter(r=>JSON.stringify([r.manifest.id,r.manifest.title,r.lines]).toLowerCase().includes(query.toLowerCase()));
- $('list-count').textContent=found.length+' / '+records.length;$('library-en').textContent='GAME / 真实事件';$('record-list').replaceChildren();
- for(const r of found){const selected=r.manifest.id===w?.manifest.id,branchEditing=selected&&w.branch?.enabled,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=r.capability||(r.editable?'full':'readonly');b.title=(root.GCSEventReading?.title(r.manifest)||r.manifest.title)+' · '+({full:'完整编辑',text:'仅文字编辑',readonly:'只读'}[b.dataset.capability]);b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
-  b.append(el('span',r.capability==='text'?'✎':r.editable?'☷':'🔒','record-symbol'),el('span',(root.GCSEventReading?.title(r.manifest)||r.manifest.title)+' · '+r.lines.filter(line=>!line.kind||line.kind==='dialogue').length+' 句'+(branchEditing?' · 选择结构':r.capability==='text'?' · 仅文字':r.editable?' · 完整编辑':' · 只读')+(selected&&w.changes.length?' · 未应用':''),'record-title'));
-  b.onclick=()=>{if(selected||b.disabled)return;if(w.changes.length&&!window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？'))return;try{root.GCSProject.selectEvent(r.manifest.id);}catch(e){root.GCSProject.report(e.message);}};$('record-list').append(b);
+ const w=work(),records=w?.eventRecords||(w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines,rawSource:w.rawSource}]:[]),result=directory.group(records,query),searching=!!query.trim();
+ if(directoryRecords!==records){directoryRecords=records;groupState.clear();}
+ const revealSelection=directorySelected!==w?.manifest.id,queryChanged=directoryQuery!==query;directorySelected=w?.manifest.id;directoryQuery=query;
+ const list=$('record-list'),scroll=list.scrollTop;$('library-title').textContent='剧情目录';const foot=document.querySelector('.library-foot');if(foot)foot.textContent=result.groups.map(g=>(g.id==='dialogic'?'时间轴':g.label)+' '+g.total).join(' · ');list.classList.add('event-directory');list.replaceChildren();$('list-count').textContent=result.matched+' / '+result.total;$('library-en').textContent='GAME / 剧情目录';
+ for(const group of result.groups){if(!group.total||searching&&!group.records.length)continue;const section=el('details',undefined,'event-directory-group');section.dataset.sourceCategory=group.id;section.open=searching||group.records.some(r=>r.manifest.id===w?.manifest.id)||(groupState.get(group.id)??!group.collapsed);
+  const summary=el('summary');summary.append(el('span',group.label),el('span',searching?group.records.length+' / '+group.total:String(group.total),'event-directory-count'));section.append(summary);const content=el('div',undefined,'event-directory-items');section.append(content);
+  summary.onclick=()=>{if(!searching)groupState.set(group.id,!section.open);};
+  for(const r of group.records){const d=directory.describe(r),selected=r.manifest.id===w?.manifest.id,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=d.capability;b.title=d.title+' · '+d.subtitle+'\n'+r.manifest.sourcePath;b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
+   const info=el('span',undefined,'record-info'),branchEditing=selected&&w.branch?.enabled;info.append(el('span',d.title,'record-title'),el('span',d.subtitle+(branchEditing?' · 选择结构':'')+(selected&&w.changes.length?' · 未应用':''),'record-sub'));
+   b.append(el('span',group.id==='dialogic'?'◷':d.capability==='text'?'✎':r.editable?'☷':'⌘','record-symbol'),info);b.onclick=()=>selectEvent(r.manifest.id);content.append(b);
+  }list.append(section);
  }
+ if(!result.matched)list.append(el('p','没有匹配的来源；搜索覆盖剧情、时间轴与技术来源。','event-directory-empty'));
+ list.scrollTop=queryChanged?0:scroll;if(revealSelection||queryChanged&&!searching)list.querySelector('.record.active')?.scrollIntoView({block:'nearest'});
 }
 const viewStates=new WeakMap();
 function render(editor,preview){
@@ -18,6 +28,15 @@ function render(editor,preview){
  if(!s.connected||!w){editor.append(el('h2',s.connected?'真实事件暂不可用':'连接游戏项目以读取真实事件'),el('p',s.eventError||'选择《凝顾》根目录后读取已映射事件。此页不再展示演示剧情。','notice'));return;}
  let view=viewStates.get(w);if(!view){view={editing:false,previewOpen:false,renderToken:0};viewStates.set(w,view);}
  if(w.readOnly)view.editing=false;
+ const descriptor=directory.describe({manifest:w.manifest,capability:w.capability,editable:!w.readOnly,lines:w.lines,rawSource:w.rawSource});
+ if(descriptor.category!=='story'){
+  const heading=el('div',undefined,'editor-heading'),label=el('div');label.append(el('div',descriptor.category==='dialogic'?'Dialogic 时间轴 · 原文只读':'技术来源 · 只读','breadcrumb'),el('h2',descriptor.title));heading.append(label);editor.append(heading);
+  const panel=el('section',undefined,'event-source-panel');panel.append(el('p',descriptor.category==='dialogic'?'此文件使用 Dialogic 指令与跳转格式。目前仅支持原文只读审阅，不解析为普通对白，也不支持编辑或演出预览。运行入口尚未确认。':descriptor.explanation,'notice'),el('p',w.manifest.sourcePath,'record-id'));
+  if(descriptor.category==='technical'){const related=(w.eventRecords||[]).filter(r=>descriptor.related.includes(r.manifest.id));if(related.length){panel.append(el('h3','相关剧情'));const links=el('div',undefined,'event-source-links');for(const r of related){const b=el('button',directory.title(r.manifest));b.dataset.relatedEventId=r.manifest.id;b.disabled=!!(busy||w.locked||w.blocked||state().workspace?.locked);b.onclick=()=>selectEvent(r.manifest.id,true);links.append(b);}panel.append(links);}else panel.append(el('p','相关对白来源当前未读取；保留此入口与真实源配置。','hint'));}
+  if(w.rawSource){const source=el('pre',w.rawSource,'event-text event-source-text');if(descriptor.category==='dialogic')panel.append(source);else{const details=el('details');details.append(el('summary','查看真实源配置'),source);panel.append(details);}}
+  if(w.discoveryErrors?.length)panel.append(el('p','部分来源无法读取：'+w.discoveryErrors.join('；'),'notice'));
+  editor.append(panel);preview.append(el('p',descriptor.category==='dialogic'?'Dialogic 原文审阅不提供人物演出预览。':'此入口没有独立对白；请选择相关剧情阅读或编辑。','hint'));return;
+ }
  const renderToken=++view.renderToken;
  const locked=()=>w.locked||w.blocked||state().workspace?.locked;
  const heading=el('div',undefined,'editor-heading'),title=el('div');title.append(el('div',view.flowOpen?'流程图':view.editing?'编辑模式 · 内存草稿':'阅读模式','breadcrumb'),el('h2',root.GCSEventReading?.title(w.manifest)||w.manifest.title));heading.append(title);editor.append(heading);

@@ -1,6 +1,8 @@
-# GCS 0.11.1 · 连续剧情阅读与安全编辑
+# GCS 0.12.0 · 分类剧情目录与安全编辑
 
 [打开工作台](https://panghu233-bot.github.io/gcs/)
+
+左侧剧情目录按「剧情 47 / Dialogic 时间轴 9 / 技术来源 4」展示全部 60 个真实来源。技术来源默认折叠但可搜索定位，并提供对应真实剧情入口；Dialogic 使用实际文件名、子目录及原文只读能力说明。战前、战后、动态剧情和含对白的辅助片段保留在主剧情，不再出现匿名的“剧情片段 · 0句”。
 
 打开真实剧情后，标题下方直接显示开场。对白按已确认的顺序连续排列，选择出现在正文里：点击选项后，其后续立即在下方展开；改选另一项只切换后续，开场不会重复。条件、战斗结果与已确认奖励使用简明中文说明，结束明确标记。
 
@@ -19,3 +21,5 @@
 [完整能力与安全边界](docs/editor-capabilities.md)
 
 开发检查：npm test。真实来源隔离写入验证：node tools/verify-events.cjs --project <Godot根目录>。真实浏览器交互与视觉验收：node tools/verify-flow-browser.cjs --project <Godot根目录>（使用本机 Playwright 与 Edge 无界面模式）。原生系统目录授权弹窗和 Godot 内实际播放仍未列为自动验收通过。
+
+目录真实数据验收：`node tools/verify-directory-browser.cjs --project <Godot根目录>`；可加 `--screenshots test-results/directory` 保存本地截图。仅通过限定的只读文件列表连接，不给浏览器正式项目写入句柄。`--url https://panghu233-bot.github.io/gcs/` 可验收已部署页面，静态程序加载后阻断后续网络，真实项目文件只驻留本地浏览器内存。`--baseline` 固定使用 `03e1956` 的列表与阅读代码，复现原有的 12 个匿名零句条目。

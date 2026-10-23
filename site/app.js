@@ -37,6 +37,7 @@
     $('.library-foot').textContent=realEvents()?'真实事件 · 对白内存编辑':realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 立绘可替换 · 资料只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
     const connection=window.GCSProject.getState();
     $('.project-label').textContent=connection.connected?connection.name+' / 卡牌工作副本 · NPC 立绘可替换 · 真实对白编辑':data.project.name+' / 演示项目';
+    $('#record-list').classList.toggle('event-directory',realEvents());
     if(realEvents()){window.GCSEventStudio.renderList(query);return;}
     if(realCards()){window.GCSGameCards.renderList(connection.records,selected,query);return;}
     if(realNPCs()){
