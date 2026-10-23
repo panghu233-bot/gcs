@@ -47,3 +47,14 @@ test('UI: full review lists insertion, deletion, movement, text and automatic po
 test('UI: unrepresentable blank narration explains the limitation and cannot open a save review',async()=>{
  const x=await uiSetup();x.w.setPerformance(0,'speaker','');x.render();x.button(x.editor,'查看差异并应用').onclick();assert(!x.body.children[0].open);assert.match(x.reports.at(-1),/无法可靠清空立绘/);assert.equal(x.fs.writes.length,0);
 });
+
+test('UI: restore review shows only changed dialogue text, positions and performance fields',async()=>{
+ const cases=[
+  {name:'delete',edit:w=>w.remove(2),check:blocks=>{const b=blocks.find(b=>b.children[0].textContent.includes('新增'));assert(b);assert.deepEqual(b.children.filter(n=>n.tag==='pre').map(n=>n.textContent),['合成第3句']);}},
+  {name:'insert',edit:w=>{w.insert(2);w.set(2,'新增待移除对白');},check:blocks=>{const b=blocks.find(b=>b.children[0].textContent.includes('删除'));assert(b);assert.deepEqual(b.children.filter(n=>n.tag==='pre').map(n=>n.textContent),['新增待移除对白']);}},
+  {name:'text',edit:w=>w.set(2,'修改后的第三句'),check:blocks=>{assert.equal(blocks.length,1);assert.deepEqual(blocks[0].children.filter(n=>n.tag==='pre').map(n=>n.textContent),['修改后的第三句','合成第3句']);}},
+  {name:'move',edit:w=>w.move(2,1),check:blocks=>{assert.equal(blocks.length,2);for(const b of blocks){assert.match(b.children[0].textContent,/顺序调整/);const values=b.children.filter(n=>n.tag==='pre').map(n=>n.textContent);assert.match(values[0],/^原第 \d+ 句：合成第[34]句$/);assert.match(values[1],/^现第 \d+ 句：合成第[34]句$/);assert.notEqual(values[0].match(/第 (\d+)/)[1],values[1].match(/第 (\d+)/)[1]);}}},
+  ...[['speaker','说话人','顾飞雪'],['left','左侧立绘','顾清寒'],['right','右侧立绘','顾飞雪'],['mood','表情','shy']].map(([key,label,value])=>({name:key,edit:w=>w.setPerformance(2,key,value),check:blocks=>{assert(blocks.some(b=>b.children[0].textContent.includes(label)));for(const b of blocks){assert.match(b.children[0].textContent,/说话人|左侧立绘|右侧立绘|表情/);const values=b.children.filter(n=>n.tag==='pre').map(n=>n.textContent);assert.equal(values.length,2);assert.notEqual(values[0],values[1]);}}}))
+ ];
+ for(const c of cases){const x=await uiSetup();x.w.saved(x.files[m.sourcePath]);c.edit(x.w);const current=x.w.plan().bytes;x.fs.data.set(x.source,current);x.w.saved(current);x.render();await x.button(x.editor,'从备份恢复').onclick();const d=x.body.children[0];assert(d.open,c.name);const blocks=d.children.filter(n=>n.className==='apply-change');c.check(blocks);for(const b of blocks)for(const n of b.children.filter(n=>n.tag==='pre'))assert.doesNotMatch(n.textContent,/说话人:|文字:|左侧立绘:|右侧立绘:|表情:/);assert.equal(x.fs.writes.length,0);}
+});

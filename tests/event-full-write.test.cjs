@@ -39,5 +39,5 @@ test('real isolated disk: post-commit failure rolls back, uncertain third-party 
 });
 
 test('unsupported narration and ambiguous comments fail before making any backup or disk change',async t=>{
- for(const mode of ['narrator','comment']){const files=fixture();if(mode==='comment')files[m.sourcePath]=enc(patch.decode(files[m.sourcePath]).replace('return out\r\n','return out\r\n\t\t# 归属不明\r\n'));const fs=await diskFS(files);t.after(()=>fs.cleanup());const w=await event.fromHandle(fs.project);if(mode==='narrator')w.setPerformance(0,'speaker','');else w.duplicate(0);await assert.rejects(writer.prepare(args(fs,w,mode)),/清空立绘|注释/);assert.deepEqual(new Uint8Array(await fs.read(m.sourcePath)),files[m.sourcePath]);}
+ for(const mode of ['narrator','comment']){const files=fixture();if(mode==='comment')files[m.sourcePath]=enc(patch.decode(files[m.sourcePath]).replace('return out\r\n','return out\r\n\t\t# 归属不明\r\n'));const fs=await diskFS(files);t.after(()=>fs.cleanup());const w=await event.fromHandle(fs.project,event.manifest);if(mode==='narrator')w.setPerformance(0,'speaker','');else w.duplicate(0);await assert.rejects(writer.prepare(args(fs,w,mode)),/清空立绘|注释/);assert.deepEqual(new Uint8Array(await fs.read(m.sourcePath)),files[m.sourcePath]);}
 });

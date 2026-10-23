@@ -4,19 +4,27 @@
 const dialog=el('dialog');dialog.id='event-dialog';dialog.setAttribute('aria-label','检查并应用真实对白修改');document.body.append(dialog);
 let session=null,busy=false;const state=()=>root.GCSProject.getState(),work=()=>state().eventWorkspace;
 function change(kind='event-draft'){window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind}}));}
-function renderList(query){const w=work(),found=w&&JSON.stringify([w.manifest.id,w.manifest.title,w.texts]).toLowerCase().includes(query.toLowerCase());$('list-count').textContent=(found?1:0)+' / '+(w?1:0);$('library-en').textContent='GAME / 真实事件';$('record-list').replaceChildren();if(found){const b=el('button',undefined,'record active');b.dataset.action='event-select';b.append(el('span','☷','record-symbol'),el('span',w.manifest.title+' · '+w.lines.length+' 句'+(w.changes.length?' · 未应用':''),'record-title'));$('record-list').append(b);}}
+function renderList(query=''){
+ const w=work(),records=w?.eventRecords|| (w?[{manifest:w.manifest,editable:!w.readOnly,lines:w.lines}]:[]),found=records.filter(r=>JSON.stringify([r.manifest.id,r.manifest.title,r.lines]).toLowerCase().includes(query.toLowerCase()));
+ $('list-count').textContent=found.length+' / '+records.length;$('library-en').textContent='GAME / 真实事件';$('record-list').replaceChildren();
+ for(const r of found){const selected=r.manifest.id===w?.manifest.id,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
+  b.append(el('span',r.editable?'☷':'🔒','record-symbol'),el('span',r.manifest.title+' · '+r.lines.length+' 句'+(r.editable?' · 可编辑':' · 只读')+(selected&&w.changes.length?' · 未应用':''),'record-title'));
+  b.onclick=()=>{if(selected||b.disabled)return;if(w.changes.length&&!window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？'))return;try{root.GCSProject.selectEvent(r.manifest.id);}catch(e){root.GCSProject.report(e.message);}};$('record-list').append(b);
+ }
+}
 const viewStates=new WeakMap();
 function render(editor,preview){
  editor.replaceChildren();preview.replaceChildren();const s=state(),w=work();
  if(!s.connected||!w){editor.append(el('h2',s.connected?'真实事件暂不可用':'连接游戏项目以读取真实事件'),el('p',s.eventError||'选择《凝顾》根目录后读取已映射事件。此页不再展示演示剧情。','notice'));return;}
  let view=viewStates.get(w);if(!view){view={editing:false,previewOpen:false,renderToken:0};viewStates.set(w,view);}
+ if(w.readOnly)view.editing=false;
  const renderToken=++view.renderToken;
  const locked=()=>w.locked||w.blocked||state().workspace?.locked;
  const heading=el('div',undefined,'editor-heading'),title=el('div');title.append(el('div',view.editing?'编辑模式 · 内存草稿':'阅读模式','breadcrumb'),el('h2',w.manifest.title));heading.append(title);editor.append(heading);
  function button(text,fn){const b=el('button',text);b.disabled=!!locked();b.onclick=()=>{if(locked())return;try{return fn();}catch(e){root.GCSProject.report(e.message);}};return b;}
  function redraw(focus=false){render(editor,preview);renderList($('search')?.value||'');change();if(focus)editor.querySelector?.('textarea')?.focus();}
  const tools=el('div',undefined,'card-edit-tools');editor.append(tools);
- tools.append(button(view.editing?'完成编辑':'编辑剧本',()=>{view.editing=!view.editing;redraw();}));
+ if(!w.readOnly)tools.append(button(view.editing?'完成编辑':'编辑剧本',()=>{view.editing=!view.editing;redraw();}));
  const previewToggle=button('演出预览',()=>{view.previewOpen=!view.previewOpen;redraw();});previewToggle.setAttribute('aria-expanded',String(view.previewOpen));previewToggle.setAttribute('aria-controls','preview');tools.append(previewToggle);
  let undo,redo,reset,review,restore;
  if(view.editing){
@@ -25,6 +33,10 @@ function render(editor,preview){
  }
  const status=el('p',undefined,'hint');status.setAttribute('role','status');editor.append(status);
  const script=el('div',undefined,'event-script');editor.append(script);
+ const origin=el('p',w.manifest.sourcePath+' / '+(w.manifest.className?w.manifest.className+'.':'')+w.manifest.functionName+(w.manifest.entryPath?' · 执行入口：'+w.manifest.entryPath:' · 执行入口未确认'),'record-id');editor.insertBefore(origin,script);
+ if(w.readOnly){editor.append(el('p','只读：'+w.reason+'。下面仅展示可直接确认的字面量对白；完整配置请展开源码，不将片段顺序当作实际播放顺序。','notice'));}
+ if(w.rawSource){const details=el('details'),summary=el('summary','查看真实源配置');details.append(summary,el('pre',w.rawSource,'event-text'));editor.append(details);}
+ if(w.discoveryErrors?.length)editor.append(el('p','部分来源无法读取：'+w.discoveryErrors.join('；'),'notice'));
  const current=w.lines;
  current.forEach((line,index)=>{
   const selected=w.selectedIndex===index;
@@ -46,13 +58,14 @@ function render(editor,preview){
    const up=button('上移',()=>{w.move(index,-1);redraw(true);}),down=button('下移',()=>{w.move(index,1);redraw(true);});up.disabled=!!locked()||index===0;down.disabled=!!locked()||index===current.length-1;
    actions.append(button('前插',()=>{w.insert(index);redraw(true);}),button('后插',()=>{w.insert(index,true);redraw(true);}),button('复制',()=>{w.duplicate(index);redraw(true);}),remove,up,down);row.append(actions);
   }else row.append(el('p',line.text||'（空白对白）','event-script-text'));
+  if(w.readOnly)row.append(el('p','左：'+(line.left??'未解析')+' / 右：'+(line.right??'未解析')+' / 表情：'+(line.mood??'未解析'),'hint'));
   script.append(row);
  });
  if(view.editing)editor.append(el('p','新增对白沿用相邻人物、左右立绘和表情；开场背景保留为事件配置。人物及表情可在展开的演出面板中逐句编辑，审阅全部差异并备份后可安全应用。','hint'));
  let previewKey=null,previewText=null;
  function updatePreview(){
   if(!view.previewOpen){preview.replaceChildren();return;}
-  const line=w.lines[w.selectedIndex],key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
+  const line=w.lines[w.selectedIndex];if(!line){preview.replaceChildren(el('p','此来源没有可直接解析的对白，请查看真实源配置。','notice'));return;}if(w.readOnly&&['left','right','mood'].some(k=>typeof line[k]!=='string'||line[k]==='<inherit>')){preview.replaceChildren(el('p','当前句演出依赖运行时配置，请查看源码；不推断立绘。','notice'));return;}const key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
   if(key===previewKey&&previewText){previewText.textContent=line.text||'（空白对白）';return;}
   previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));
   const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p','图片仅从所选本地项目读取。演出修改先保留草稿，审阅并备份后写入游戏。','notice'));
@@ -100,7 +113,7 @@ function render(editor,preview){
  function refresh(){
   const dirty=w.changes.length>0,isLocked=!!locked();
   if(undo){undo.disabled=!w.canUndo||isLocked;redo.disabled=!w.canRedo||isLocked;reset.disabled=!dirty||isLocked;review.disabled=!dirty||isLocked||!s.handle;restore.disabled=dirty||isLocked||!s.handle;}
-  status.textContent=w.blocked?'自动恢复未完成：请检查备份恢复后重新读取。':dirty?'有未应用的剧本草稿；请查看全部差异后保存。':'共 '+w.lines.length+' 句真实对白。';
+  status.textContent=w.readOnly?'只读来源 · 已解析 '+w.lines.length+' 句；未确认的配置保留在源码中。':w.blocked?'自动恢复未完成：请检查备份恢复后重新读取。':dirty?'有未应用的剧本草稿；请查看全部差异后保存。':'共 '+w.lines.length+' 句真实对白。';
   updatePreview();
  }
  refresh();
@@ -112,7 +125,7 @@ async function selectRestore(w){
  const s=state();if(!s.handle||s.status!=='connected'||w.locked||w.blocked||w.changes.length||s.workspace?.locked||busy)return;
  const job={work:w,project:s.handle,cards:s.workspace};let review;
  lock(job,true);
- try{const dir=await window.showDirectoryPicker({id:'gcs-event-restore',mode:'read'});if(!valid(job))throw Error('项目连接已变化');review=await root.GCSEventWriter.reviewRestore({project:job.project,backupDirectory:dir,originalBytes:w.originalBytes,entryBytes:w.entryBytes});if(!valid(job))throw Error('项目连接已变化');}
+ try{const dir=await window.showDirectoryPicker({id:'gcs-event-restore',mode:'read'});if(!valid(job))throw Error('项目连接已变化');review=await root.GCSEventWriter.reviewRestore({project:job.project,backupDirectory:dir,originalBytes:w.originalBytes,entryBytes:w.entryBytes,spec:w.manifest});if(!valid(job))throw Error('项目连接已变化');}
  catch(e){root.GCSProject.report(e.name==='AbortError'?'已取消选择备份，游戏文件未修改。':'备份恢复检查失败：'+e.message);}
  finally{lock(job,false);}
  if(review&&valid(job))open(w,review);
@@ -122,7 +135,7 @@ function open(w,restoreReview=null){
  try{if(!restoreReview)w.plan();}catch(e){root.GCSProject.report('暂时不能保存：'+e.message+'。请保留草稿，撤销相关设置；若源码已被其他程序修改，请重新读取项目。');return;}
  session={work:w,project:s.handle,cards:s.workspace,changes:restoreReview?restoreReview.changes:w.changes,lines:w.lines,structureChanged:w.hasStructuralChanges,restoreReview};const job=session;dialog.replaceChildren(el('h2',restoreReview?'从备份恢复 · 检查全部对白差异':'检查全部对白修改'),el('p',w.manifest.title+' / '+w.manifest.id+' → '+w.manifest.sourcePath,'record-id'));
  if(restoreReview)dialog.append(el('p','所选备份：'+restoreReview.backupName+'。仅恢复以下已验证的对白，无需再次选择目录或创建新备份。','notice'));
- for(const c of job.changes){const labels={insert:'新增',delete:'删除',move:'顺序调整',performance:{speaker:'说话人',left:'左侧立绘',right:'右侧立绘',mood:'表情'}[c.key]};const block=el('div',undefined,'apply-change');block.append(el('strong','第 '+(c.index+1)+' 句 · '+(labels[c.kind]||'文字')),el('p',restoreReview?'当前游戏对白':'原文'),el('pre',c.before,'event-text event-before'),el('p',restoreReview?'备份对白（恢复后）':'修改后'),el('pre',c.after,'event-text event-after'));dialog.append(block);}
+ for(const c of job.changes){const labels={insert:'新增',delete:'删除',move:'顺序调整',performance:{speaker:'说话人',left:'左侧立绘',right:'右侧立绘',mood:'表情'}[c.key]};const block=el('div',undefined,'apply-change');block.append(el('strong','第 '+(c.index+1)+' 句 · '+(labels[c.kind]||'文字')));if(c.kind!=='insert')block.append(el('p',restoreReview?'当前游戏对白':'原文'),el('pre',c.before,'event-text event-before'));if(c.kind!=='delete')block.append(el('p',restoreReview?'备份对白（恢复后）':'修改后'),el('pre',c.after,'event-text event-after'));dialog.append(block);}
  dialog.append(el('p',(restoreReview?'点击确认恢复后授权写入。恢复前的当前版本仅保留内存快照，失败时尝试安全回滚；若无法确认磁盘内容则停止，避免覆盖外部修改。':'先选择游戏项目外的目录并验证原文件备份，再点击授权写入。')+'浏览器无法消除最后检查与提交间的并发竞争；请先关闭游戏及正在编辑此源码的程序。'+(restoreReview?'所选备份不会被修改。':'备份包含完整源文件；恢复请使用“从备份恢复”，仅还原当前事件。'),'hint'));
  const backup=restoreReview?null:el('button','选择项目外目录并备份'),apply=el('button',restoreReview?'确认恢复':'授权写入并应用','primary'),close=el('button','关闭'),message=el('p',restoreReview?'差异已检查，确认后将请求写入授权。':'尚未备份');message.setAttribute('role','status');apply.disabled=!restoreReview;if(backup)dialog.append(backup);dialog.append(message,el('div',undefined,'dialog-actions'));dialog.lastChild.append(close,apply);
  function controls(){if(backup)backup.disabled=busy||job.done;apply.disabled=busy||(!restoreReview&&!job.token)||job.done||w.blocked;close.disabled=busy;}

@@ -35,7 +35,7 @@ test('changed runtime rules, unsafe paths, malformed PNG and released pending lo
 test('folder and file-list event readers attach lazy preview without reading any portrait until requested',async()=>{
  const files=fixture(),reads=[];
  function dir(prefix=''){return {getDirectoryHandle:async n=>dir(prefix+n+'/'),getFileHandle:async n=>({getFile:async()=>{const path=prefix+n;reads.push(path);if(!files[path])throw Object.assign(Error('missing'),{name:'NotFoundError'});return new Blob([files[path]]);}})};}
- const w=await event.fromHandle(dir());assert(w.performance);assert.equal(reads.length,2);w.release();
+ const w=await event.fromHandle(dir());assert(w.performance);assert.deepEqual(reads,require('../site/event-catalog.js').paths);assert(!reads.some(p=>p.startsWith('assets/')));w.release();
  const list=Object.entries(files).map(([path,bytes])=>{const b=new Blob([bytes]);b.webkitRelativePath='game/'+path;return b;});const other=await event.fromFileList(list);assert(other.performance);other.release();
 });
 

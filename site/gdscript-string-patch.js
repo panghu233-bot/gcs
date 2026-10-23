@@ -53,6 +53,7 @@ function encode(value,token){
 const fields=['speaker','text','left','right','mood'];
 const sameLine=(a,b)=>fields.every(key=>a[key]===b[key]);
 function readLinear(bytes,spec){
+ if(spec.adapter==='static'){const reader=typeof module!=='undefined'?require('./static-dialogue.js'):root.GCSStaticDialogue;return reader.read(bytes,spec);}
  const source=decode(bytes);if(!equal(enc.encode(source),bytes))throw Error('UTF-8 无法无损往返');
  const all=lex(source),cls=scope(all,'class',spec.className);if(cls[0].column!==0||cls[2]?.value!==':')throw Error('事件类结构不受支持');
  const constants=cls.filter((t,i)=>t.value==='const'&&cls[i+1]?.value==='PORTRAIT_SPEAKER');if(constants.length!==1)throw Error('说话人常量不唯一');
@@ -121,7 +122,7 @@ function plan({originalBytes,spec,changes}){
 
 // Bounded planner: no filesystem operations.
 function planLines({originalBytes,spec,lines,structureChanged=false}){
- if(spec.className!=='Day12CountdownEvent'||spec.functionName!=='create_lines')throw Error('仅支持《指日可待》的目标函数');
+ if(spec.adapter!=='static'&&(spec.className!=='Day12CountdownEvent'||spec.functionName!=='create_lines'))throw Error('目标函数未获适配器支持');
  const before=new Uint8Array(originalBytes),parsed=readLinear(before,spec);
  if(!Array.isArray(lines)||!lines.length)throw Error('至少保留一句对白');
  const target=lines.map(line=>{if(!line||Object.keys(line).some(key=>![...fields,'id','line','form','token'].includes(key)))throw Error('草稿含未知字段，不能静默丢弃');const row={};for(const key of fields){const value=line?.[key];if(typeof value!=='string'||value.length>(key==='text'?20000:200))throw Error('无效的完整对白字段：'+key);unicode(value);row[key]=value;}if(!row.mood)throw Error('表情不得为空');return row;});
@@ -135,12 +136,12 @@ function planLines({originalBytes,spec,lines,structureChanged=false}){
   return {...plan({originalBytes:before,spec,changes}),kind:'text'};
  }
  if(parsed.body.hasComments)throw Error('目标函数含注释，无法证明其对白归属，停止结构或演出补丁生成');
- if(!parsed.openingBg)throw Error('缺少已确认的开场背景，不能猜测结构补丁');
+ if(!parsed.openingBg&&spec.adapter!=='static')throw Error('缺少已确认的开场背景，不能猜测结构补丁');
  const oldBody=parsed.source.slice(parsed.body.start,parsed.body.end),breaks=oldBody.match(/\r?\n/g)||[],eol=breaks[0]||(parsed.source.includes('\r\n')?'\r\n':'\n');
  if(breaks.some(b=>b!==eol))throw Error('目标函数换行混用，停止结构补丁生成');
  const quote={prefix:'',quote:'"'},literal=value=>encode(value,quote);
- const expression=row=>row.speaker===parsed.defaultSpeaker&&row.left===''&&row.right===parsed.defaultSpeaker?'_line('+literal(row.text)+', '+literal(row.mood)+')':'{'+fields.map(key=>literal(key)+': '+literal(row[key])).join(', ')+'}';
- const statements=['var out: Array[Dictionary] = []','var first := '+expression(target[0]),'first["bg"] = '+parsed.openingBg,'out.append(first)',...target.slice(1).map(row=>'out.append('+expression(row)+')'),'return out'];
+ const expression=row=>spec.adapter!=='static'&&row.speaker===parsed.defaultSpeaker&&row.left===''&&row.right===parsed.defaultSpeaker?'_line('+literal(row.text)+', '+literal(row.mood)+')':'{'+fields.map(key=>literal(key)+': '+literal(row[key])).join(', ')+'}';
+ const statements=parsed.openingBg?['var out: Array[Dictionary] = []','var first := '+expression(target[0]),'first["bg"] = '+parsed.openingBg,'out.append(first)',...target.slice(1).map(row=>'out.append('+expression(row)+')'),'return out']:['var out: Array[Dictionary] = []',...target.map(row=>'out.append('+expression(row)+')'),'return out'];
  const body=statements.map(line=>parsed.body.indent+line).join(eol),start=enc.encode(parsed.source.slice(0,parsed.body.start)).length,end=enc.encode(parsed.source.slice(0,parsed.body.end)).length,replacement=enc.encode(body);
  const output=new Uint8Array(before.length-(end-start)+replacement.length);output.set(before.subarray(0,start));output.set(replacement,start);output.set(before.subarray(end),start+replacement.length);
  if(!equal(before.subarray(0,start),output.subarray(0,start))||!equal(before.subarray(end),output.subarray(start+replacement.length)))throw Error('目标函数体外字节变化，补丁被拒绝');
@@ -149,7 +150,7 @@ function planLines({originalBytes,spec,lines,structureChanged=false}){
 }
 function planRestore({originalBytes,backupBytes,spec}){
  const current=readLinear(originalBytes,spec),backup=readLinear(backupBytes,spec);
- const protectedClass=p=>{const c=scope(lex(p.source),'class',spec.className);return p.source.slice(c[0].start,p.body.start)+'<BODY>'+p.source.slice(p.body.end,c.at(-1).end);};
+ const protectedClass=p=>{if(spec.adapter==='static')return p.dependencies;const c=spec.className?scope(lex(p.source),'class',spec.className):scope(lex(p.source),'func',spec.functionName);return p.source.slice(c[0].start,p.body.start)+'<BODY>'+p.source.slice(p.body.end,c.at(-1).end);};
  if(current.defaultSpeaker!==backup.defaultSpeaker||current.openingBg!==backup.openingBg||protectedClass(current)!==protectedClass(backup))throw Error('事件辅助函数、背景或受保护的类配置已变化，不能自动恢复');
  // Validate that the snapshot remains expressible by the unchanged player.
  for(const row of backup.lines){
@@ -161,7 +162,7 @@ function planRestore({originalBytes,backupBytes,spec}){
   if(!changes.length)throw Error('当前事件与备份一致，无需恢复');
   return {...plan({originalBytes,spec,changes}),kind:'text'};
  }
- if(!current.openingBg||!backup.openingBg)throw Error('无法确认开场背景，停止结构恢复');
+ if(spec.adapter!=='static'&&(!current.openingBg||!backup.openingBg))throw Error('无法确认开场背景，停止结构恢复');
  if(current.body.hasComments||backup.body.hasComments)throw Error('目标函数含注释，无法确认归属，不能恢复结构');
  const start=enc.encode(current.source.slice(0,current.body.start)).length,end=enc.encode(current.source.slice(0,current.body.end)).length,replacement=enc.encode(backup.source.slice(backup.body.start,backup.body.end));
  const bytes=new Uint8Array(originalBytes.length-end+start+replacement.length);bytes.set(originalBytes.subarray(0,start));bytes.set(replacement,start);bytes.set(originalBytes.subarray(end),start+replacement.length);

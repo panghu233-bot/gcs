@@ -74,7 +74,8 @@
   async function disconnect(){if(state.workspace?.locked||state.eventWorkspace?.locked)return;const ticket=++revision;state.npcRelease?.();state.eventWorkspace?.release?.();update({eventWorkspace:null,eventError:'',npcRecords:null,npcError:'',npcRelease:null,npcUpdate:null,status:'disconnected',name:'',records:[],branches:null,workspace:null,documents:null,originalBytes:null,handle:null,message:'已断开游戏项目 · 当前展示演示数据'});try{await save(null,ticket);}catch{if(ticket===revision)update({message:'已断开；浏览器未能清除记忆，请在网站设置中清除本地存储'});}}
   function applied(originalBytes){state.originalBytes=originalBytes;state.documents=state.workspace?.documents;state.workspace?.markSaved();update({message:'修改已应用 · 备份已验证'});}
   function portraitApplied(handle,records,path,bytes){if(state.handle!==handle||state.npcRecords!==records||!state.npcUpdate)throw Error('项目连接已变化，请重新读取');state.npcUpdate(path,bytes);emit('portrait');}
-  return {portraitApplied,getState:()=>({...state,records:state.workspace?state.workspace.records:state.records,branches:state.workspace?state.workspace.branches:state.branches,connected:connected()}),applied,report:message=>update({message}),open,openFiles,restore,authorize,refresh,disconnect};
+  function selectEvent(id){if(state.status!=='connected'||state.workspace?.locked||state.eventWorkspace?.locked||state.eventWorkspace?.blocked)return;const w=state.eventWorkspace;if(!w?.selectEvent)return;const next=w.selectEvent(id);update({eventWorkspace:next});}
+  return {selectEvent,portraitApplied,getState:()=>({...state,records:state.workspace?state.workspace.records:state.records,branches:state.workspace?state.workspace.branches:state.branches,connected:connected()}),applied,report:message=>update({message}),open,openFiles,restore,authorize,refresh,disconnect};
  }
  function browserStore(){
   async function run(action,value){return new Promise((resolve,reject)=>{

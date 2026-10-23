@@ -47,13 +47,13 @@ class Element{
  setAttribute(k,v){this[k]=v;}addEventListener(k,f){this.listeners[k]=f;}showModal(){this.open=true;}close(){this.open=false;this.listeners.close?.();}
 }
 const descendants=n=>[n,...n.children.flatMap(descendants)];
-function ui(){
+function ui(initial=null){
  const body=new Element('body'),editor=new Element('main'),preview=new Element('aside'),ids={},events=[];
- const w=event.parse(fixture()),s={connected:true,status:'connected',handle:{},eventWorkspace:w,workspace:{}},listeners={};
+ const w=initial||event.parse(fixture()),s={connected:true,status:'connected',handle:{},eventWorkspace:w,workspace:{}},listeners={};
  const window={GCSProject:{getState:()=>s,report:()=>{}},GCSEventWriter:writer,addEventListener:(k,f)=>(listeners[k]??=[]).push(f),dispatchEvent:e=>{events.push(e);for(const f of listeners[e.type]||[])f(e);}};
  vm.runInNewContext(fs.readFileSync('site/event-studio.js','utf8'),{window,document:{body,createElement:t=>new Element(t),getElementById:id=>ids[id]??=new Element('div')},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}}});
  const render=()=>window.GCSEventStudio.render(editor,preview),find=text=>descendants(editor).find(n=>n.tag==='button'&&n.textContent===text);
- render();return {w,editor,preview,body,find,render,events};
+ render();return {w,s,window,ids,editor,preview,body,find,render,events};
 }
 
 test('UI defaults to clean reading; editing selects rows, types continuously and returns with draft',()=>{
@@ -141,4 +141,18 @@ test('late performance-choice responses never attach stale controls to a new sel
  x.find('演出预览').onclick();x.find('编辑剧本').onclick();await flush();descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'))[4].onclick();await flush();
  const current=pending.at(-1);current.resolve({names:['测试人物','顾飞雪'],moods:['normal'],moodEnabled:false});await flush();for(const old of pending.slice(0,-1))old.resolve({names:['旧选项'],moods:['shy'],moodEnabled:true});await flush();
  const right=descendants(x.preview).find(n=>n.tag==='select'&&n.dataset.performanceField==='right');assert(right.children.some(o=>o.value==='顾飞雪'));assert(!right.children.some(o=>o.value==='旧选项'));assert.equal(x.w.selectedIndex,4);
+});
+
+test('multi-event UI lists and searches real scopes, confirms dirty switches, exposes readonly source and blocks locked selection',async t=>{
+ const {multi,find:record}=require('./helpers/synthetic-multi-event.cjs'),{diskFS}=require('./helpers/disk-event.cjs'),files=multi(),disk=await diskFS(files);t.after(()=>disk.cleanup());const initial=await event.fromHandle(disk.project),x=ui(initial);let allow=false,confirmations=0;
+ x.window.confirm=()=>{confirmations++;return allow;};x.window.GCSProject.selectEvent=id=>{x.s.eventWorkspace=x.s.eventWorkspace.selectEvent(id);x.render();};
+ const list=()=>x.window.GCSEventStudio.renderList(''),rows=()=>x.ids['record-list'].children;list();assert.equal(rows().length,5);
+ const id=record(files,'create_day_lines').manifest.id;initial.set(0,'未保存');rows().find(n=>n.dataset.eventId===id).onclick();assert.equal(x.s.eventWorkspace,initial);assert.equal(confirmations,1);
+ allow=true;rows().find(n=>n.dataset.eventId===id).onclick();assert.equal(x.s.eventWorkspace.manifest.id,id);assert(x.find('编辑剧本'));list();
+ const branch=record(files,'create_branch_lines').manifest.id;rows().find(n=>n.dataset.eventId===branch).onclick();assert(x.s.eventWorkspace.readOnly);assert(!x.find('编辑剧本'));assert(!x.find('查看差异并应用'));assert(descendants(x.editor).some(n=>n.textContent.includes('只读：')));assert(descendants(x.editor).some(n=>n.tag==='pre'&&n.textContent.includes('choice')));
+ x.window.GCSEventStudio.renderList('合成夜晚');assert.equal(rows().length,1);list();x.s.eventWorkspace.setLocked(true);list();assert(rows().every(n=>n.disabled));
+});
+
+test('diffs omit unchanged rows shifted only by insertion/deletion while retaining actual reorder and field changes',()=>{
+ const w=event.parse(fixture());w.insert(2);w.set(2,'插入一行');assert.deepEqual(w.changes.map(c=>c.kind),['insert']);w.discard();w.remove(2);assert.deepEqual(w.changes.map(c=>c.kind),['delete']);w.discard();w.move(2,1);assert.equal(w.changes.filter(c=>c.kind==='move').length,2);w.set(3,'移动后改字');assert.equal(w.changes.filter(c=>!c.kind).length,1);
 });
