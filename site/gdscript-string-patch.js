@@ -52,7 +52,9 @@ function encode(value,token){
 }
 const fields=['speaker','text','left','right','mood'];
 const sameLine=(a,b)=>fields.every(key=>a[key]===b[key]);
+function textAdapter(){return typeof module!=='undefined'?require('./event-text.js'):root.GCSEventText;}
 function readLinear(bytes,spec){
+ if(spec.adapter==='literal')return textAdapter().read(bytes,spec);
  if(spec.adapter==='static'){const reader=typeof module!=='undefined'?require('./static-dialogue.js'):root.GCSStaticDialogue;return reader.read(bytes,spec);}
  const source=decode(bytes);if(!equal(enc.encode(source),bytes))throw Error('UTF-8 无法无损往返');
  const all=lex(source),cls=scope(all,'class',spec.className);if(cls[0].column!==0||cls[2]?.value!==':')throw Error('事件类结构不受支持');
@@ -105,6 +107,7 @@ function readLinear(bytes,spec){
  return {source,lines,openingBg,defaultSpeaker:speaker.value,body:{start:bodyStart,end:bodyEnd,indent,hasComments},legacyCompatible:lines.length===spec.expectedCount&&lines.every(l=>l.form==='helper')};
 }
 function plan({originalBytes,spec,changes}){
+ if(spec.adapter==='literal')return textAdapter().plan({originalBytes,spec,changes});
  const before=new Uint8Array(originalBytes),parsed=readLinear(before,spec);if(!Array.isArray(changes)||!changes.length)throw Error('没有对白修改');
  const seen=new Set(),edits=changes.map(c=>{
   if(Object.keys(c).some(k=>!['index','before','after'].includes(k))||!Number.isInteger(c.index)||seen.has(c.index)||!parsed.lines[c.index])throw Error('无效或重复对白索引');seen.add(c.index);const line=parsed.lines[c.index];
@@ -122,6 +125,7 @@ function plan({originalBytes,spec,changes}){
 
 // Bounded planner: no filesystem operations.
 function planLines({originalBytes,spec,lines,structureChanged=false}){
+ if(spec.adapter==='literal')return textAdapter().planLines({originalBytes,spec,lines,structureChanged});
  if(spec.adapter!=='static'&&(spec.className!=='Day12CountdownEvent'||spec.functionName!=='create_lines'))throw Error('目标函数未获适配器支持');
  const before=new Uint8Array(originalBytes),parsed=readLinear(before,spec);
  if(!Array.isArray(lines)||!lines.length)throw Error('至少保留一句对白');
@@ -149,6 +153,7 @@ function planLines({originalBytes,spec,lines,structureChanged=false}){
  return {kind:'function-body',bytes:output,edits:[{start,end,bytes:replacement}]};
 }
 function planRestore({originalBytes,backupBytes,spec}){
+ if(spec.adapter==='literal')return textAdapter().restore({originalBytes,backupBytes,spec});
  const current=readLinear(originalBytes,spec),backup=readLinear(backupBytes,spec);
  const protectedClass=p=>{if(spec.adapter==='static')return p.dependencies;const c=spec.className?scope(lex(p.source),'class',spec.className):scope(lex(p.source),'func',spec.functionName);return p.source.slice(c[0].start,p.body.start)+'<BODY>'+p.source.slice(p.body.end,c.at(-1).end);};
  if(current.defaultSpeaker!==backup.defaultSpeaker||current.openingBg!==backup.openingBg||protectedClass(current)!==protectedClass(backup))throw Error('事件辅助函数、背景或受保护的类配置已变化，不能自动恢复');
@@ -169,5 +174,5 @@ function planRestore({originalBytes,backupBytes,spec}){
  const parsed=readLinear(bytes,spec);if(parsed.openingBg!==current.openingBg||parsed.lines.length!==backup.lines.length||!parsed.lines.every((r,i)=>sameLine(r,backup.lines[i]))||!equal(bytes.subarray(0,start),originalBytes.subarray(0,start))||!equal(bytes.subarray(start+replacement.length),originalBytes.subarray(end)))throw Error('恢复范围或完整字段验证失败');
  return {kind:'function-body',bytes,edits:[{start,end,bytes:replacement}]};
 }
-const api={lex,scope,sameTokens,readLinear,plan,planLines,planRestore,decode,equal};if(typeof module!=='undefined')module.exports=api;root.GCSGDScriptPatch=api;
+const api={encode,lex,scope,sameTokens,readLinear,plan,planLines,planRestore,decode,equal};if(typeof module!=='undefined')module.exports=api;root.GCSGDScriptPatch=api;
 })(typeof window!=='undefined'?window:globalThis);

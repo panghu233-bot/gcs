@@ -41,6 +41,7 @@ jobs:
           node --check site/npc-portrait-writer.js
           node --check site/npc-portrait-controller.js
           node --check site/gdscript-string-patch.js
+          node --check site/event-text.js
           node --check site/static-dialogue.js
           node --check site/event-catalog.js
           node --check site/event-performance.js

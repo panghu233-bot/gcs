@@ -144,7 +144,7 @@ test('late performance-choice responses never attach stale controls to a new sel
 });
 
 test('multi-event UI lists and searches real scopes, confirms dirty switches, exposes readonly source and blocks locked selection',async t=>{
- const {multi,find:record}=require('./helpers/synthetic-multi-event.cjs'),{diskFS}=require('./helpers/disk-event.cjs'),files=multi(),disk=await diskFS(files);t.after(()=>disk.cleanup());const initial=await event.fromHandle(disk.project),x=ui(initial);let allow=false,confirmations=0;
+ const {multi,find:record,entry}=require('./helpers/synthetic-multi-event.cjs'),{diskFS}=require('./helpers/disk-event.cjs'),files=multi();files[entry]=new TextEncoder().encode(new TextDecoder().decode(files[entry]).replace('CultivationData.SharedEvent.create_branch_lines()','null'));const disk=await diskFS(files);t.after(()=>disk.cleanup());const initial=await event.fromHandle(disk.project),x=ui(initial);let allow=false,confirmations=0;
  x.window.confirm=()=>{confirmations++;return allow;};x.window.GCSProject.selectEvent=id=>{x.s.eventWorkspace=x.s.eventWorkspace.selectEvent(id);x.render();};
  const list=()=>x.window.GCSEventStudio.renderList(''),rows=()=>x.ids['record-list'].children;list();assert.equal(rows().length,5);
  const id=record(files,'create_day_lines').manifest.id;initial.set(0,'未保存');rows().find(n=>n.dataset.eventId===id).onclick();assert.equal(x.s.eventWorkspace,initial);assert.equal(confirmations,1);
@@ -155,4 +155,20 @@ test('multi-event UI lists and searches real scopes, confirms dirty switches, ex
 
 test('diffs omit unchanged rows shifted only by insertion/deletion while retaining actual reorder and field changes',()=>{
  const w=event.parse(fixture());w.insert(2);w.set(2,'插入一行');assert.deepEqual(w.changes.map(c=>c.kind),['insert']);w.discard();w.remove(2);assert.deepEqual(w.changes.map(c=>c.kind),['delete']);w.discard();w.move(2,1);assert.equal(w.changes.filter(c=>c.kind==='move').length,2);w.set(3,'移动后改字');assert.equal(w.changes.filter(c=>!c.kind).length,1);
+});
+
+test('text-tier UI edits dialogue and options separately, hides structure/performance controls and labels locked rows',async()=>{
+ const {textFixture,find}=require('./helpers/synthetic-text-event.cjs'),files=textFixture(),w=event.parse(files,find(files).manifest),x=ui(w),flush=()=>new Promise(r=>setImmediate(r));
+ w.performance={choices:async()=>{throw Error('text tier must not request performance editing');},load:async line=>({left:{name:'',empty:true},right:{name:'',empty:true}})};
+ x.find('编辑剧本').onclick();for(const name of ['前插','后插','复制','删除','上移','下移'])assert(!x.find(name));x.find('演出预览').onclick();await flush();assert(!descendants(x.preview).some(n=>n.tag==='select'));
+ const index=w.lines.findIndex(r=>r.kind==='option'&&r.target==='lose'),rows=()=>descendants(x.editor).filter(n=>n.className?.split(' ').includes('event-script-row'));rows()[index].onclick();const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='只改失败选项';input.oninput();assert.equal(w.lines[index].text,'只改失败选项');assert.equal(w.lines.find(r=>r.kind==='option'&&r.target==='win').text,'相同选项');
+ x.find('查看差异并应用').onclick();const dialog=x.body.children[0];assert(descendants(dialog).some(n=>n.tag==='strong'&&n.textContent.includes('选项文字')));assert(descendants(dialog).some(n=>n.textContent.includes('→ lose')));
+ rows()[w.lines.findIndex(r=>!r.editable)].onclick();assert(!descendants(x.editor).some(n=>n.tag==='textarea'));assert(descendants(x.editor).some(n=>n.textContent.includes('文字只读')));
+ x.find('撤销一步').onclick();assert(!w.changes.length);x.find('重做').onclick();assert.equal(w.changes.length,1);
+});
+
+test('text-tier UI completes review, external backup, authorized disk save and context-specific restore',async t=>{
+ const {textFixture,find}=require('./helpers/synthetic-text-event.cjs'),{diskFS}=require('./helpers/disk-event.cjs'),files=textFixture(),disk=await diskFS(files);t.after(()=>disk.cleanup());const w=await event.fromHandle(disk.project,find(files).manifest),original=w.texts,x=ui(w);x.s.handle=disk.project;x.s.workspace={setLocked(){},locked:false};x.window.showDirectoryPicker=async()=>disk.backup;
+ const button=(root,text)=>descendants(root).find(n=>n.tag==='button'&&n.textContent===text);x.find('编辑剧本').onclick();const input=descendants(x.editor).find(n=>n.tag==='textarea');input.value='界面保存验证';input.oninput();x.find('查看差异并应用').onclick();let dialog=x.body.children[0];await button(dialog,'选择项目外目录并备份').onclick();assert(!button(dialog,'授权写入并应用').disabled);await button(dialog,'授权写入并应用').onclick();assert(!w.changes.length);assert.equal((await event.fromHandle(disk.project,w.manifest)).texts[0],'界面保存验证');
+ const filesInBackup=require('node:fs').readdirSync(disk.backup.path),backup=await disk.backup.getDirectoryHandle(filesInBackup[0]);button(dialog,'关闭').onclick();x.render();x.window.showDirectoryPicker=async()=>backup;await x.find('从备份恢复').onclick();dialog=x.body.children[0];assert(dialog.open);assert(descendants(dialog).some(n=>n.textContent.includes('对白数组')));await button(dialog,'确认恢复').onclick();assert.deepEqual(w.texts,original);assert.deepEqual((await event.fromHandle(disk.project,w.manifest)).texts,original);
 });
