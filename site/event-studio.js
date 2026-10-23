@@ -42,20 +42,21 @@ function render(editor,preview){
  const current=w.lines;
  current.forEach((line,index)=>{
   if(visible&&!visible.has(index))return;
-  const selected=w.selectedIndex===index;
+  const selected=w.selectedIndex===index,segmentEditing=!!visible&&view.editing;
   // Use a non-button container for the active row so its inputs and buttons remain independent.
-  const row=el(view.editing&&!selected?'button':'article',undefined,'event-script-row'+(selected?' selected':''));
+  const row=el(view.editing&&!selected&&!segmentEditing?'button':'article',undefined,'event-script-row'+(selected?' selected':''));
   row.dataset.textKind=line.kind||'dialogue';if(line.slotId)row.dataset.slotId=line.slotId;row.append(el('span',(index+1)+'. '+line.speaker,'event-script-speaker'));
   if(w.textOnly)row.append(el('p',line.context+' · 源码行 '+line.line+' · '+(line.editable?'文字可编辑':'文字只读：'+line.reason),'hint'));
-  if(!view.editing||!selected){
+  if(!view.editing||!selected&&!segmentEditing){
    if(view.editing){row.type='button';row.disabled=!!locked();}else{row.setAttribute('role','button');row.setAttribute('tabindex','0');}
    row.setAttribute('aria-pressed',String(selected));row.onclick=()=>{if(locked()||w.selectedIndex===index)return;w.select(index);redraw(view.editing);};
    if(!view.editing)row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();row.onclick();}};
   }
-  if(view.editing&&selected&&(!w.textOnly||line.editable)){
+  if(view.editing&&(selected||segmentEditing)&&(!w.textOnly||line.editable)){
    const caption=el('label',line.kind==='option'?'选项文字':line.kind==='prompt'?'选择提示':'对白文字','field event-inline-field'),input=el('textarea');input.value=line.text;input.maxLength=20000;input.dataset.eventLine=String(index);input.setAttribute('aria-label','第 '+(index+1)+' 句对白');input.disabled=!!locked();
    // Keep this input node and its value/selection untouched while updating the draft and preview.
-   input.oninput=()=>{try{w.set(index,input.value);refresh();renderList($('search')?.value||'');change('event-input');}catch(e){status.textContent=e.message;}};
+   input.onfocus=()=>{if(locked())return;w.select(index);for(const node of script.querySelectorAll?.('.event-script-row')||[])node.classList.toggle('selected',node.querySelector('textarea')===input);refresh();};
+   input.oninput=()=>{try{w.set(index,input.value);visible?.refresh?.();refresh();renderList($('search')?.value||'');change('event-input');}catch(e){status.textContent=e.message;}};
    caption.append(input);row.append(caption);
    if(!w.textOnly){const actions=el('div',undefined,'card-edit-tools event-line-actions');
    const remove=button('删除',()=>{w.remove(index);redraw(true);});remove.disabled=!!locked()||current.length===1;
@@ -69,6 +70,7 @@ function render(editor,preview){
  let previewKey=null,previewText=null;
  function updatePreview(){
   if(!view.previewOpen){preview.replaceChildren();return;}
+  if(visible&&visible.size===0){preview.replaceChildren(el('p','当前为结束、条件或跳转节点，没有独立对白演出。请查看节点的真实配置或继续查看后续。','notice'));return;}
   const line=w.lines[w.selectedIndex];if(!line){preview.replaceChildren(el('p','此来源没有可直接解析的对白，请查看真实源配置。','notice'));return;}if((w.textOnly&&line.kind!=='dialogue')){preview.replaceChildren(el('p',line.speaker+'：'+line.text,'event-text'),el('p',line.context,'hint'));return;}if((w.readOnly||w.textOnly)&&['left','right','mood'].some(k=>typeof line[k]!=='string'||line[k]==='<inherit>')){preview.replaceChildren(el('p','当前句演出依赖运行时配置，请查看源码；不推断立绘。','notice'));return;}const key=JSON.stringify([line.speaker,line.left,line.right,line.mood]);
   if(key===previewKey&&previewText){previewText.textContent=line.text||'（空白对白）';return;}
   previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));

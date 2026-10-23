@@ -50,7 +50,9 @@ function read(bytes,spec){
  const covered=new Set(nodes.flatMap(n=>n.indices));const missing=new Map();parsed.lines.forEach((line,index)=>{if(!covered.has(index)){const key=line.context;let n=missing.get(key);if(!n){n=add('unknown','独立源码片段 · '+key,{group:key,fields:{说明:'构造顺序或跨片段连接未确认；保留独立文字编辑。'}});missing.set(key,n);}n.indices.push(index);}});
  if(s.appendRows.length)warnings.push('含 append 构造：仅展示已证明的数组片段，片段间不连接。');
  const branched=nodes.some(n=>['choice','condition','combat','jump','unknown'].includes(n.kind))||arrays.length>1;
- return {nodes:nodes.filter(n=>!n.syntheticEnd||edges.some(e=>e.to===n.id)),edges,arrays,warnings,branched,parsed};
+ const entryConfirmed=!!spec.entryPath&&arrays.length===1&&s.appendRows.length===0&&arrays[0].flowRows.length>0&&atContext(arrays[0].array.start)==='函数主段';
+ const entryId=entryConfirmed?arrays[0].flowRows[0].id:null;
+ return {entryId,entryConfirmed,entryReason:entryConfirmed?'已确认调用入口 → 对白数组首行':'入口或动态构造顺序未完整确认，片段不作为多个开场',nodes:nodes.filter(n=>!n.syntheticEnd||edges.some(e=>e.to===n.id)),edges,arrays,warnings,branched,parsed};
 }
 const api={read};if(typeof module!=='undefined')module.exports=api;root.GCSEventFlow=api;
 })(typeof window!=='undefined'?window:globalThis);

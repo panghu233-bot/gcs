@@ -52,6 +52,7 @@ jobs:
           node --check site/event-flow.js
           node --check site/event-branches.js
           node --check site/event-flow-view.js
+          node --check site/event-flow-layout.js
       - name: Stage current website
         run: |
           mkdir -p _site
