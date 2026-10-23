@@ -47,3 +47,9 @@ test('edit choices come from actual mappings and present ordinary PNGs; NPC port
  const r=await x.p.load({speaker:'老人',left:'顾清寒',right:'顾飞雪',mood:'shy'});assert.equal(r.left.path,'assets/portraits/hero/shy.png');assert.equal(r.right.path,'assets/portraits/mother/normal.png');
  const y=setup();y.files.delete('assets/portraits/hero/shy.png');assert.deepEqual((await y.p.choices({right:'顾清寒'})).moods,['normal']);
 });
+
+
+test('speaker synchronization immediately resolves the new solo character portrait and undo restores it',async()=>{
+ const x=setup(),w=event.parse(fixture());w.setPerformance(0,'speaker','顾清寒');const original=w.lines[0];w.setPerformance(0,'speaker','顾飞雪');assert.equal(w.lines[0].right,'顾飞雪');let preview=await x.p.load(w.lines[0]);assert.equal(preview.right.path,'assets/portraits/mother/normal.png');assert(preview.left.empty);
+ w.undo();assert.deepEqual(w.lines[0],original);preview=await x.p.load(w.lines[0]);assert.equal(preview.right.path,'assets/portraits/hero/normal.png');w.redo();assert.equal(w.lines[0].right,'顾飞雪');x.p.release();
+});

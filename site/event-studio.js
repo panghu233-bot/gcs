@@ -80,7 +80,7 @@ function render(editor,preview){
       w.setPerformance(w.selectedIndex,key,select.value);redraw();
      };
     }
-    note.textContent=options.moodEnabled?'表情仅作用于画面中的顾清寒；说话人与左右立绘分别设置。':'当前左右人物使用固定立绘，表情不参与显示；原表情值保留。';
+    note.textContent=options.moodEnabled?'表情仅作用于画面中的顾清寒；单人立绘与原说话人一致时，切换说话人会同步立绘。':'当前左右人物使用固定立绘，表情不参与显示；原表情值保留。';
    }).catch(error=>{if(valid())note.textContent='无法读取真实候选：'+error.message;});
   }
   Promise.resolve().then(()=>w.performance.load(line)).then(result=>{
