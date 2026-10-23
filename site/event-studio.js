@@ -4,29 +4,45 @@
 const dialog=el('dialog');dialog.id='event-dialog';dialog.setAttribute('aria-label','检查并应用真实对白修改');document.body.append(dialog);
 let session=null,busy=false;const state=()=>root.GCSProject.getState(),work=()=>state().eventWorkspace;
 function change(kind='event-draft'){window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind}}));}
-const directory=root.GCSEventDirectory,groupState=new Map();let directoryRecords=null,directorySelected=null,directoryQuery='';
-function selectEvent(id,reveal=false){const w=work();if(!w||id===w.manifest.id||busy||w.locked||w.blocked||state().workspace?.locked)return;if(w.changes.length&&!window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？'))return;try{if(reveal&&$('search').value){$('search').value='';$('search').dispatchEvent(new Event('input',{bubbles:true}));}root.GCSProject.selectEvent(id);}catch(e){root.GCSProject.report(e.message);}}
+const directory=root.GCSEventDirectory,stories=root.GCSEventStories,groupState=new Map();let directoryRecords=null,directorySelected=null,directoryQuery='',overviewId=null,overviewAnchor=null,pendingCase=null,arranging=false;
+const saved=key=>{try{return JSON.parse(root.localStorage?.getItem(key)||'null');}catch{return null;}},store=(key,value)=>{try{root.localStorage?.setItem(key,JSON.stringify(value));}catch{}};
+let displayOrder=stories?.normalizeOrder(saved('gcs-story-order-v1'))||[];const expanded=saved('gcs-story-expanded-v1');for(const entry of Array.isArray(expanded)?expanded:[])if(Array.isArray(entry)&&typeof entry[0]==='string'&&typeof entry[1]==='boolean')groupState.set(entry[0],entry[1]);
+const overviewViews=new Map(),blocked=()=>busy||work()?.locked||work()?.blocked||state().workspace?.locked;
+function canLeave(){if(blocked())return false;return !work()?.changes.length||window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？');}
+function clearSearch(){if($('search')?.value){$('search').value='';$('search').dispatchEvent(new Event('input',{bubbles:true}));}}
+function selectEvent(id,reveal=false,caseValue){const w=work();if(!w||id===w.manifest.id&&!overviewId&&!caseValue||!canLeave())return;try{overviewId=null;overviewAnchor=null;pendingCase=caseValue?{id,value:caseValue}:null;if(reveal)clearSearch();root.GCSProject.selectEvent(id);}catch(e){root.GCSProject.report(e.message);}}
+function selectStory(story){if(!canLeave())return;overviewId=story.id;overviewAnchor=story.sourceIds[0];groupState.set(story.id,true);store('gcs-story-expanded-v1',[...groupState]);root.GCSProject.selectEvent(overviewAnchor);}
 function renderList(query=''){
- const w=work(),records=w?.eventRecords||(w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines,rawSource:w.rawSource}]:[]),result=directory.group(records,query),searching=!!query.trim();
- if(directoryRecords!==records){directoryRecords=records;groupState.clear();}
- const revealSelection=directorySelected!==w?.manifest.id,queryChanged=directoryQuery!==query;directorySelected=w?.manifest.id;directoryQuery=query;
- const list=$('record-list'),scroll=list.scrollTop;$('library-title').textContent='剧情目录';const foot=document.querySelector('.library-foot');if(foot)foot.textContent=result.groups.map(g=>(g.id==='dialogic'?'时间轴':g.label)+' '+g.total).join(' · ');list.classList.add('event-directory');list.replaceChildren();$('list-count').textContent=result.matched+' / '+result.total;$('library-en').textContent='GAME / 剧情目录';
- for(const group of result.groups){if(!group.total||searching&&!group.records.length)continue;const section=el('details',undefined,'event-directory-group');section.dataset.sourceCategory=group.id;section.open=searching||group.records.some(r=>r.manifest.id===w?.manifest.id)||(groupState.get(group.id)??!group.collapsed);
-  const summary=el('summary');summary.append(el('span',group.label),el('span',searching?group.records.length+' / '+group.total:String(group.total),'event-directory-count'));section.append(summary);const content=el('div',undefined,'event-directory-items');section.append(content);
-  summary.onclick=()=>{if(!searching)groupState.set(group.id,!section.open);};
-  for(const r of group.records){const d=directory.describe(r),selected=r.manifest.id===w?.manifest.id,b=el('button',undefined,'record'+(selected?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=d.capability;b.title=d.title+' · '+d.subtitle+'\n'+r.manifest.sourcePath;b.disabled=!!(busy||w?.locked||w?.blocked||state().workspace?.locked);b.setAttribute('aria-pressed',String(selected));
-   const info=el('span',undefined,'record-info'),branchEditing=selected&&w.branch?.enabled;info.append(el('span',d.title,'record-title'),el('span',d.subtitle+(branchEditing?' · 选择结构':'')+(selected&&w.changes.length?' · 未应用':''),'record-sub'));
-   b.append(el('span',group.id==='dialogic'?'◷':d.capability==='text'?'✎':r.editable?'☷':'⌘','record-symbol'),info);b.onclick=()=>selectEvent(r.manifest.id);content.append(b);
+ const w=work(),records=w?.eventRecords||(w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines,rawSource:w.rawSource}]:[]);
+ if(overviewId&&w?.manifest.id!==overviewAnchor)overviewId=null;
+ const result=stories.build(records,query,displayOrder),searching=!!query.trim(),list=$('record-list'),scroll=list.scrollTop,selected=overviewId||w?.manifest.id,reveal=directorySelected!==selected||directoryQuery!==query&&!searching;
+ directoryRecords=records;directorySelected=selected;directoryQuery=query;
+ $('library-title').textContent='剧情目录';$('library-en').textContent='GAME / 故事与来源';const foot=document.querySelector('.library-foot');if(foot)foot.textContent=result.storyCount+' 剧情事件 · '+result.sourceCount+' 源码来源（剧情 '+result.storySourceCount+' / 时间轴 '+(result.auxiliary.find(g=>g.id==='dialogic')?.total||0)+' / 技术 '+(result.auxiliary.find(g=>g.id==='technical')?.total||0)+'）';
+ list.classList.add('event-directory');list.replaceChildren();$('list-count').textContent=searching?result.matchedStories+' 事件 · '+result.matchedSources+' 来源':result.storyCount+' 事件 · '+result.sourceCount+' 来源';
+ const tools=el('div',undefined,'story-directory-tools'),adjust=el('button',arranging?'完成排序':'调整目录顺序');adjust.dataset.storyArrange='true';adjust.disabled=!!blocked();adjust.onclick=()=>{arranging=!arranging;renderList(query);};tools.append(adjust);
+ if(arranging){const reset=el('button','恢复默认');reset.dataset.storyOrderReset='true';reset.disabled=!!blocked();reset.onclick=()=>{displayOrder=[];store('gcs-story-order-v1',[]);renderList(query);};tools.append(reset,el('small','仅调同类目录展示；不改变游戏触发或对白顺序。'));}list.append(tools);
+ function disclosure(id,label,cls,open){const section=el('details',undefined,cls);section.open=searching||open;const summary=el('summary',label);section.append(summary);summary.onclick=()=>{if(!searching){groupState.set(id,!section.open);store('gcs-story-expanded-v1',[...groupState]);}};return section;}
+ function recordButton(r,label,kind,caseValue){const d=directory.describe(r),active=!overviewId&&r.manifest.id===w?.manifest.id&&(!caseValue||(pendingCase?.value||viewStates.get(w)?.storyCase||'wanjun')===caseValue),b=el('button',undefined,'record'+(active?' active':''));b.dataset.action='event-select';b.dataset.eventId=r.manifest.id;b.dataset.capability=d.capability;if(caseValue)b.dataset.caseValue=caseValue;b.disabled=!!blocked();b.setAttribute('aria-pressed',String(active));b.title=d.title+' · '+r.manifest.sourcePath;const info=el('span',undefined,'record-info');info.append(el('span',label||d.title,'record-title'),el('span',(kind?kind+' · ':'')+(caseValue?'共享来源 · '+({full:'完整编辑',text:'仅文字编辑',readonly:'只读'}[d.capability]||'只读'):d.subtitle)+(active&&w.changes.length?' · 未应用':''),'record-sub'));b.append(el('span','↳','record-symbol'),info);b.onclick=()=>selectEvent(r.manifest.id,false,caseValue);return b;}
+ const labels={phase:'事件阶段',condition:'条件分支',choice:'玩家选项',retry:'条件重访'};
+ for(const bucket of result.buckets){if(!bucket.stories.length)continue;const section=disclosure('bucket:'+bucket.id,bucket.label,'event-directory-group',reveal&&bucket.stories.some(s=>s.id===overviewId||!overviewId&&s.sourceIds.includes(w?.manifest.id))|| (groupState.get('bucket:'+bucket.id)??true));section.dataset.storyBucket=bucket.id;section.title=bucket.note;const content=el('div',undefined,'event-directory-items');section.append(content);
+  for(const story of bucket.stories){const row=el('div',undefined,'story-directory-root');row.dataset.storyRoot=story.id;
+   if(story.grouped){const selectedChild=!overviewId&&story.sourceIds.includes(w?.manifest.id),open=selectedChild&&reveal||(groupState.get(story.id)??selectedChild),tree=disclosure(story.id,'','story-directory-parent',open);tree.dataset.storyId=story.id;const title=el('button',undefined,'record story-parent-title'+(overviewId===story.id?' active':''));title.dataset.storySelect=story.id;title.setAttribute('aria-pressed',String(overviewId===story.id));title.disabled=!!blocked();const info=el('span',undefined,'record-info');info.append(el('span',story.title,'record-title'),el('span',story.sourceIds.length+' 来源 · '+story.timing,'record-sub'));title.append(info);title.onclick=e=>{e.preventDefault();e.stopPropagation();selectStory(story);};tree.children[0].append(title);const children=el('div',undefined,'story-directory-children');for(const c of story.children)children.append(recordButton(c.record,c.label,labels[c.kind],c.caseValue));tree.append(children);row.append(tree);
+   }else row.append(recordButton(story.record));
+   if(arranging&&!searching){const controls=el('div',undefined,'story-order-controls'),all=result.allStories.filter(s=>s.bucket===bucket.id),index=all.findIndex(s=>s.id===story.id);for(const [delta,label] of [[-1,'上移'],[1,'下移']]){const b=el('button',label);b.dataset.storyMove=String(delta);b.setAttribute('aria-label',story.title+label);b.disabled=!!blocked()||index+delta<0||index+delta>=all.length;b.onclick=()=>{const ids=result.allStories.map(s=>s.id),a=ids.indexOf(story.id),other=ids.indexOf(all[index+delta].id);[ids[a],ids[other]]=[ids[other],ids[a]];displayOrder=ids;store('gcs-story-order-v1',ids);renderList(query);};controls.append(b);}row.append(controls);}content.append(row);
   }list.append(section);
  }
- if(!result.matched)list.append(el('p','没有匹配的来源；搜索覆盖剧情、时间轴与技术来源。','event-directory-empty'));
- list.scrollTop=queryChanged?0:scroll;if(revealSelection||queryChanged&&!searching)list.querySelector('.record.active')?.scrollIntoView({block:'nearest'});
+ for(const g of result.auxiliary){if(!g.records.length)continue;const section=disclosure(g.id,g.label+' · '+g.total,'event-directory-group',reveal&&g.records.some(r=>!overviewId&&r.manifest.id===w?.manifest.id)||(groupState.get(g.id)??!g.collapsed));section.dataset.sourceCategory=g.id;const content=el('div',undefined,'event-directory-items');for(const r of g.records)content.append(recordButton(r));section.append(content);list.append(section);}
+ if(!result.matchedSources)list.append(el('p','没有匹配项；搜索覆盖全部故事、时间轴和技术来源。','event-directory-empty'));
+ list.scrollTop=scroll;if(reveal)list.querySelector('.record.active')?.scrollIntoView({block:'nearest'});
 }
 const viewStates=new WeakMap();
 function render(editor,preview){
  editor.replaceChildren();preview.replaceChildren();const s=state(),w=work();
  if(!s.connected||!w){editor.append(el('h2',s.connected?'真实事件暂不可用':'连接游戏项目以读取真实事件'),el('p',s.eventError||'选择《凝顾》根目录后读取已映射事件。此页不再展示演示剧情。','notice'));return;}
+ if(overviewId&&w.manifest.id===overviewAnchor&&stories&&root.GCSEventStoryView){const story=stories.build(w.eventRecords||[]).allStories.find(s=>s.id===overviewId);if(story){let v=overviewViews.get(story.id);if(!v){v={cases:{},choices:{},alternatives:{}};overviewViews.set(story.id,v);}root.GCSEventStoryView.render({editor,preview,story,w,view:v,open:(id,value)=>selectEvent(id,true,value),redraw:()=>render(editor,preview)});return;}}
  let view=viewStates.get(w);if(!view){view={editing:false,previewOpen:false,renderToken:0};viewStates.set(w,view);}
+ if(pendingCase?.id===w.manifest.id){const m=root.GCSEventReading.model(w),index=stories.caseIndex(m,pendingCase.value);if(index>=0)view.readCase=index;view.storyCase=pendingCase.value;pendingCase=null;}
+ if(w.manifest.className==='TeahouseNpcEncounter'&&root.GCSEventReading){const m=root.GCSEventReading.model(w);view.storyCase=['wanjun','jianan','other'].find(value=>stories.caseIndex(m,value)===(view.readCase||0));}
  if(w.readOnly)view.editing=false;
  const descriptor=directory.describe({manifest:w.manifest,capability:w.capability,editable:!w.readOnly,lines:w.lines,rawSource:w.rawSource});
  if(descriptor.category!=='story'){
@@ -104,7 +120,7 @@ function render(editor,preview){
   previewKey=key;preview.replaceChildren(el('div','演出预览 · 第 '+(w.selectedIndex+1)+' 句','preview-label'),el('p','说话人：'+(line.speaker||'旁白'),'event-performance-speaker'));
   const stage=el('div',undefined,'event-performance-stage');stage.setAttribute('aria-label','左右人物立绘');stage.append(el('p','正在读取本地立绘…','hint'));previewText=el('pre',line.text||'（空白对白）','event-text');preview.append(stage,previewText,el('p',w.textOnly?'图片仅从本地项目读取。人物和演出配置保持锁定；选择结构权限在选择节点单独显示。':'图片仅从所选本地项目读取。演出修改先保留草稿，审阅并备份后写入游戏。','notice'));
   if(!w.performance){stage.replaceChildren(el('p','立绘预览尚不可用，请重新连接本地游戏项目。','notice'));return;}
-  const valid=()=>work()===w&&view.previewOpen&&view.renderToken===renderToken&&previewKey===key;
+  const valid=()=>!overviewId&&work()===w&&view.previewOpen&&view.renderToken===renderToken&&previewKey===key;
   if(view.editing&&!w.textOnly){
    const settings=el('div',undefined,'event-performance-settings'),fields={};settings.setAttribute('aria-label','当前句人物演出设置');
    for(const [key,label] of [['speaker','说话人'],['left','左侧立绘'],['right','右侧立绘'],['mood','表情']]){
@@ -178,5 +194,5 @@ function open(w,restoreReview=null){
  close.onclick=()=>{if(!busy)dialog.close();};dialog.showModal();
 }
 dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{session=null;});window.addEventListener('gcs-project-change',()=>{if(session&&!busy&&!valid(session))dialog.close();});
-root.GCSEventStudio={renderList,render,isPreviewOpen:w=>!!viewStates.get(w)?.previewOpen};
+root.GCSEventStudio={renderList,render,isPreviewOpen:w=>!overviewId&&!!viewStates.get(w)?.previewOpen};
 })(window);

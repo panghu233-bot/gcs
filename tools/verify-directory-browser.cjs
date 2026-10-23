@@ -6,7 +6,7 @@ const live=path.resolve(process.argv[flag+1]),site=path.resolve(__dirname,'../si
 const urlFlag=process.argv.indexOf('--url'),pageUrl=urlFlag>=0?new URL(process.argv[urlFlag+1]).href:null;
 if(pageUrl&&baseline)throw Error('--url and --baseline cannot be combined');
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
-(async()=>{
+if(!baseline){require('./verify-story-hierarchy-browser.cjs');}else (async()=>{
  const files={},hashes={};async function read(name){const b=await fs.readFile(path.join(live,name));files[name]=Array.from(b);hashes[name]=hash(b);}
  for(const name of catalog.paths)await read(name);
  async function walk(name,depth=0){assert(depth<=8);for(const e of await fs.readdir(path.join(live,name),{withFileTypes:true})){const n=name+'/'+e.name;if(e.isDirectory())await walk(n,depth+1);else if(e.name.endsWith('.dtl'))await read(n);}}await walk('timeline');

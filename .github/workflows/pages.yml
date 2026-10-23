@@ -55,6 +55,8 @@ jobs:
           node --check site/event-flow-layout.js
           node --check site/event-conditions.js
           node --check site/event-directory.js
+          node --check site/event-stories.js
+          node --check site/event-story-view.js
           node --check site/event-reading.js
           node --check site/event-reading-view.js
       - name: Stage current website

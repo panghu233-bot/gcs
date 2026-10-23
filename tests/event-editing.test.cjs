@@ -52,7 +52,7 @@ const descendants=n=>[n,...n.children.flatMap(descendants)];
 function ui(initial=null){
  const body=new Element('body'),editor=new Element('main'),preview=new Element('aside'),ids={},events=[];
  const w=initial||event.parse(fixture()),s={connected:true,status:'connected',handle:{},eventWorkspace:w,workspace:{}},listeners={};
- const window={GCSEventDirectory:require('../site/event-directory.js'),GCSProject:{getState:()=>s,report:()=>{}},GCSEventWriter:writer,addEventListener:(k,f)=>(listeners[k]??=[]).push(f),dispatchEvent:e=>{events.push(e);for(const f of listeners[e.type]||[])f(e);}};
+ const window={GCSEventDirectory:require('../site/event-directory.js'),GCSEventStories:require('../site/event-stories.js'),GCSProject:{getState:()=>s,report:()=>{}},GCSEventWriter:writer,addEventListener:(k,f)=>(listeners[k]??=[]).push(f),dispatchEvent:e=>{events.push(e);for(const f of listeners[e.type]||[])f(e);}};
  vm.runInNewContext(fs.readFileSync('site/event-studio.js','utf8'),{window,document:{body,querySelector:()=>null,createElement:t=>new Element(t),getElementById:id=>ids[id]??=new Element('div')},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}}});
  const render=()=>window.GCSEventStudio.render(editor,preview),find=text=>descendants(editor).find(n=>n.tag==='button'&&n.textContent===text);
  render();return {w,s,window,ids,editor,preview,body,find,render,events};

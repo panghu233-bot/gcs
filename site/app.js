@@ -31,7 +31,7 @@
   function go(g,id) { if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=window.GCSProject.getState().connected?(window.GCSProject.getState().eventWorkspace?.eventRecords?.length||(window.GCSProject.getState().eventWorkspace?1:0)):data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
+    $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=window.GCSProject.getState().connected?(window.GCSEventStories?.build(window.GCSProject.getState().eventWorkspace?.eventRecords||[]).storyCount||(window.GCSProject.getState().eventWorkspace?1:0)):data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
     $('#library-title').textContent=meta[module][0]; $('#library-en').textContent=meta[module][1];
     $('#add-btn').hidden=realCards()||realNPCs()||realEvents();
     $('.library-foot').textContent=realEvents()?'真实事件 · 对白内存编辑':realCards()?'游戏项目 · 内存编辑':realNPCs()?'游戏人物 · 立绘可替换 · 资料只读':module==='cards'?'演示卡牌 · 未连接游戏项目':'演示内容工作区 · ID 稳定关联';
