@@ -46,7 +46,7 @@ function parse(files,spec=manifest){
   planDraft(){return patch.planLines({originalBytes:workspace.originalBytes,spec:manifest,lines:draft,structureChanged:structural()});},
   plan(){return workspace.planDraft();},
   saved(bytes){baseline=makeRows(bytes);workspace.originalBytes=new Uint8Array(bytes);draft=copy(baseline);selectedId=draft[0].id;history.length=0;future.length=0;}
- };return workspace;
+ };if(textOnly){const branches=typeof module!=='undefined'?require('./event-branches.js'):root.GCSEventBranches;branches.attach(workspace);}return workspace;
 }
 async function locate(project,path){let d=project;const p=path.split('/');for(const s of p.slice(0,-1))d=await d.getDirectoryHandle(s,{create:false});return d.getFileHandle(p.at(-1),{create:false});}
 function withPerformance(workspace,read){const performance=typeof module!=='undefined'?require('./event-performance.js'):root.GCSEventPerformance;workspace.performance=performance.create({read});workspace.release=()=>workspace.performance.release();return workspace;}
@@ -54,6 +54,7 @@ function withPerformance(workspace,read){const performance=typeof module!=='unde
 async function loadCatalog(read,timelinePaths=[],inputErrors=[]){
  const catalog=typeof module!=='undefined'?require('./event-catalog.js'):root.GCSEventCatalog,files={};
  for(const path of catalog.paths)try{const file=await read(path);if(!file)continue;if(file.size>8*1024*1024)throw Error('事件源码过大');files[path]=new Uint8Array(await file.arrayBuffer());}catch(e){inputErrors.push(path+'：'+e.message);}
+ const branches=typeof module!=='undefined'?require('./event-branches.js'):root.GCSEventBranches,flowVerified=await branches.verify(read);
  const {records,errors}=catalog.discover(files);errors.push(...inputErrors);
  let total=0;for(const path of timelinePaths){try{const f=await read(path);if(!f||f.size>1024*1024|| (total+=f.size)>8*1024*1024)throw Error('时间轴超过读取大小限制');const rawSource=await f.text();records.push({manifest:Object.freeze({id:path,title:path.slice(9).replace(/\.dtl$/,''),sourcePath:path,functionName:'Dialogic 时间轴',entryPath:null}),editable:false,capability:'readonly',reason:'Dialogic 指令、跳转与角色资源使用独立格式，当前仅提供原始时间轴只读审阅，未核实运行入口',lines:[],rawSource});}catch(e){errors.push(path+'：'+e.message);}}
  if(!records.length)throw Error(errors.join('；')||'未发现已知格式的真实事件');
@@ -61,9 +62,10 @@ async function loadCatalog(read,timelinePaths=[],inputErrors=[]){
  let current=null;
  const activate=id=>{const record=records.find(r=>r.manifest.id===id);if(!record)throw Error('事件已不存在');
   if(current?.locked||current?.blocked)throw Error('当前事件已锁定');
-  const fresh=record;
-  current=fresh.editable?parse(files,fresh.manifest):{manifest:fresh.manifest,readOnly:true,capability:'readonly',reason:fresh.reason,rawSource:fresh.rawSource,lines:fresh.lines.map((r,i)=>({...r,id:'read-'+i})),get texts(){return this.lines.map(r=>r.text);},changes:[],selectedIndex:0,select(i){if(!this.lines[i])throw Error('无效对白');this.selectedIndex=i;},locked:false,blocked:false,setLocked(v){this.locked=!!v;}};
-  current.reason=fresh.reason;current.rawSource=fresh.rawSource;current.performance=preview;current.eventRecords=records;current.discoveryErrors=errors;current.selectEvent=activate;current.release=()=>preview.release();
+  const fresh=record;let readonlyLines=fresh.lines;if(!fresh.editable&&files[fresh.manifest.sourcePath])try{const reader=typeof module!=='undefined'?require('./event-text.js'):root.GCSEventText;const parsed=reader.read(files[fresh.manifest.sourcePath],fresh.manifest);if(parsed.lines.length)readonlyLines=parsed.lines;}catch{}
+
+  current=fresh.editable?parse(files,fresh.manifest):{manifest:fresh.manifest,readOnly:true,capability:'readonly',originalBytes:files[fresh.manifest.sourcePath],reason:fresh.reason,rawSource:fresh.rawSource,lines:readonlyLines.map((r,i)=>({...r,id:'read-'+i})),get texts(){return this.lines.map(r=>r.text);},changes:[],selectedIndex:0,select(i){if(!this.lines[i])throw Error('无效对白');this.selectedIndex=i;},locked:false,blocked:false,setLocked(v){this.locked=!!v;}};
+  current.branchVerified=flowVerified;current.flowVerified=flowVerified;current.reason=fresh.reason;current.rawSource=fresh.rawSource;current.performance=preview;current.eventRecords=records;current.discoveryErrors=errors;current.selectEvent=activate;current.release=()=>preview.release();
   if(!current.readOnly){const active=current,saved=active.saved;active.saved=bytes=>{saved(bytes);files[active.manifest.sourcePath]=new Uint8Array(bytes);record.lines=patch.readLinear(bytes,active.manifest).lines;const source=patch.decode(bytes),all=patch.lex(source),owner=active.manifest.className?patch.scope(all,'class',active.manifest.className):all,fn=patch.scope(owner,'func',active.manifest.functionName);record.rawSource=source.slice(fn[0].start,fn.at(-1).end);active.rawSource=record.rawSource;};}
   return current;
  };
@@ -77,7 +79,7 @@ async function fromHandle(project,spec=null){
   return loadCatalog(read,paths.sort(),errors);
  }
  const catalog=typeof module!=='undefined'?require('./event-catalog.js'):root.GCSEventCatalog,files={};for(const path of catalog.paths){const f=await read(path);if(f){if(f.size>8*1024*1024)throw Error('事件源码过大');files[path]=new Uint8Array(await f.arrayBuffer());}}
- return withPerformance(parse(files,spec),read);
+ const workspace=parse(files,spec),branches=typeof module!=='undefined'?require('./event-branches.js'):root.GCSEventBranches;workspace.branchVerified=workspace.flowVerified=await branches.verify(read);return withPerformance(workspace,read);
 }
 async function fromFileList(list){const files=Array.from(list),map=new Map();for(const f of files){const path=f.webkitRelativePath.split('/').slice(1).join('/');if(map.has(path))throw Error('项目文件路径重复');map.set(path,f);}const timelines=[...map.keys()].filter(path=>path.startsWith('timeline/')&&path.endsWith('.dtl'));return loadCatalog(async path=>map.get(path)||null,timelines.sort().slice(0,256),timelines.length>256?['时间轴超过 256 项，仅展示前 256 项']:[]);}
 // IDs are stable within a draft. For a backup, pair exact rows first, then remaining rows.

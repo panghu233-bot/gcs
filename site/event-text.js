@@ -14,7 +14,7 @@ function read(bytes,spec){
  }if(stack.length)throw Error('源码括号未结束');
  const split=n=>{const out=[];let start=n.start+1;for(let i=start;i<n.end;i++){if(pairs.has(i)){i=pairs.get(i).end;continue;}if(ts[i].kind==='symbol'&&ts[i].value===','){if(i>start)out.push({start,end:i});start=i+1;}}if(start<n.end)out.push({start,end:n.end});return out;};
  const literal=expr=>expr&&expr.end===expr.start+1&&ts[expr.start]?.kind==='string'&&!ts[expr.start].prefix?ts[expr.start]:null;
- function dictionary(n){if(n.type!=='{')return null;const map=new Map();for(const part of split(n)){const key=ts[part.start];if(key?.kind!=='string'||key.prefix||ts[part.start+1]?.value!==':'||map.has(key.value))return null;map.set(key.value,{start:part.start+2,end:part.end});}return map;}
+ function dictionary(n){if(!n||n.type!=='{')return null;const map=new Map();for(const part of split(n)){const key=ts[part.start];if(key?.kind!=='string'||key.prefix||ts[part.start+1]?.value!==':'||map.has(key.value))return null;map.set(key.value,{start:part.start+2,end:part.end});}return map;}
  const dicts=new Map(nodes.filter(n=>n.type==='{').map(n=>[n.start,dictionary(n)]));
  const statementEnd=end=>!ts[end+1]||ts[end+1].line>ts[end].line&&ts[end+1].head;
  const returns=name=>ts.some((t,i)=>t.value==='return'&&depth[i]===0&&ts[i+1]?.value===name&&statementEnd(i+1));
@@ -67,7 +67,7 @@ function read(bytes,spec){
  if(ts.some((t,i)=>t.kind==='string'&&['text','prompt','options'].includes(t.value)&&ts[i-1]?.value==='['&&ts[i+1]?.value===']'&&ts[i+2]?.value==='='))for(const r of slots){r.editable=false;r.reason='函数后续存在文字或选项覆写，无法证明该字面量是独立文字来源';}
  const eligible=slots.filter(r=>r.editable),start=ts[0].start,end=ts.at(-1).end;
  let cursor=start,mask='';for(const r of eligible){mask+=source.slice(cursor,r.token.start)+'<GCS:'+r.slotId+'>';cursor=r.token.end;}mask+=source.slice(cursor,end);
- return {source,lines:slots,mask,scope:{start,end},legacyCompatible:false,openingBg:null,defaultSpeaker:'',body:{hasComments:false}};
+ return {source,lines:slots,mask,scope:{start,end},structure:{ts,roots,split,dictionary,rowNode,literal,pairs,atContext,appendRows,locals},legacyCompatible:false,openingBg:null,defaultSpeaker:'',body:{hasComments:false}};
 }
 function plan({originalBytes,spec,changes}){
  const before=new Uint8Array(originalBytes),parsed=read(before,spec);if(!Array.isArray(changes)||!changes.length)throw Error('没有文字修改');const seen=new Set(),edits=[];

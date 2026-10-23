@@ -48,6 +48,10 @@ jobs:
           node --check site/event-project.js
           node --check site/event-writer.js
           node --check site/event-studio.js
+          node --check site/event-flow-contract.js
+          node --check site/event-flow.js
+          node --check site/event-branches.js
+          node --check site/event-flow-view.js
       - name: Stage current website
         run: |
           mkdir -p _site
