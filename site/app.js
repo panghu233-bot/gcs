@@ -28,7 +28,12 @@
     try { localStorage.setItem(key,JSON.stringify(data)); storageFailed=false; $('#save-state').textContent='✓ 已自动暂存 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
     catch { $('#save-state').textContent='暂存失败 · 请保存 JSON'; if(!storageFailed)toast('浏览器本地空间不足或被禁用。修改仍在当前页面，请保存 JSON。'); storageFailed=true; }
   }
-  function go(g,id) { if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
+  function canSwitchModule(g){
+    const s=window.GCSProject.getState();if(!s.connected||g===module)return true;
+    if(['loading','restoring'].includes(s.status)||s.workspace?.locked||s.eventWorkspace?.locked||s.eventWorkspace?.blocked)return false;
+    return !(s.workspace?.changes.length||s.workspace?.invalid.length||s.eventWorkspace?.changes.length)||window.confirm('还有未应用的卡牌或对白修改。切换模块后草稿仍保留；打开另一剧情来源时会再次确认。是否继续？');
+  }
+  function go(g,id,authorized=false) { if(!authorized&&!canSwitchModule(g))return; if(g==='npcs')window.GCSNPCStudio.setTab('overview'); if(g==='cards' && id && window.GCSProject.getState().connected && !window.GCSProject.getState().records.some(r=>r.id===id)){toast('此卡牌关联属于演示项目，尚未与真实项目建立映射。');return;} module=g; selected=id; query=''; $('#search').value=''; render(); $('#editor').scrollTop=0; }
   function renderList() {
     document.querySelectorAll('[data-module]').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
     $('#npc-count').textContent=window.GCSProject.getState().connected?npcRecords().length:data.npcs.length; $('#event-count').textContent=window.GCSProject.getState().connected?(window.GCSEventStories?.build(window.GCSProject.getState().eventWorkspace?.eventRecords||[]).storyCount||(window.GCSProject.getState().eventWorkspace?1:0)):data.events.length; $('#card-count').textContent=window.GCSProject.getState().connected ? window.GCSProject.getState().records.length : data.cards.length;
@@ -116,6 +121,13 @@
     if(b.dataset.module){go(b.dataset.module,'');return;}
     const a=b.dataset.action;const i=Number(b.dataset.index);const x=current();
     if(module==='npcs' && a==='npc-tab'){window.GCSNPCStudio.setTab(b.dataset.tab);if(realNPCs())render();else{renderEditor();renderPreview();}return;}
+    if(realNPCs()&&a==='npc-open-event'){
+      const s=window.GCSProject.getState(),target=window.GCSNPCProject.resolveEventTarget(x?.events?.[i],s.eventWorkspace?.eventRecords||[]);
+      if(!target){toast('暂不能唯一定位剧情来源，请继续查看原有详情。');return;}
+      if(!s.eventWorkspace?.changes.length&&!canSwitchModule('events'))return;
+      if(window.GCSEventStudio.openTarget(target))go('events','',true);
+      return;
+    }
     if(realNPCs()&&a==='npc-portrait-replace'){window.GCSNPCPortraitController.open(x,window.GCSNPCStudio.selectedPortrait(x));return;}
     if(realNPCs()&&a==='npc-portrait-select'){window.GCSNPCStudio.selectRealPortrait(x,i);render();return;}
     if(realEvents())return;

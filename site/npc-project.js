@@ -54,12 +54,12 @@ function dictionaries(text){const ts=tokens(text),out=[];for(let i=0;i<ts.length
 function assignment(code,field){const ts=tokens(code);for(let i=0;i<ts.length-3;i++)if(ts[i].raw==='.'&&ts[i+1].raw===field&&ts[i+2].raw==='=')return valueAt(ts,i+3).value;return undefined;}
 function dialogueBranches(fn){
  if(fn?.name!=='get_dialogue_lines')return [];
- const lines=fn.code.split('\n'),out=[];let matchIndent=-1,offset=0;
+ const lines=fn.code.split('\n'),out=[];let matchIndent=-1,matchParameter=null,offset=0;
  for(let i=0;i<lines.length;i++){
   const l=lines[i],indent=l.match(/^\s*/)[0].length;
-  if(/^\s*match\s+\w+\s*:/.test(l))matchIndent=indent;
+  const match=l.match(/^\s*match\s+(\w+)\s*:/);if(match){matchIndent=indent;matchParameter=match[1];}
   const m=l.match(/^\s*(\w+)\s*:\s*$/);
-  if(matchIndent>=0&&indent>matchIndent&&m&&(!out.length||indent===out[0].indent))out.push({label:m[1],pos:offset,line:fn.line+i,indent});
+  if(matchIndent>=0&&indent>matchIndent&&m&&(!out.length||indent===out[0].indent))out.push({label:m[1],parameter:matchParameter,pos:offset,line:fn.line+i,indent});
   offset+=l.length+1;
  }
  return out;
@@ -109,7 +109,7 @@ function dialogueEvents(text,source){
   const fn=blocks.find(f=>entry.pos>=f.pos&&entry.pos<f.pos+f.code.length);
   const branch=dialogueBranches(fn).filter(b=>entry.pos>=fn.pos+b.pos).at(-1);
   const id=(fn?.qualified||'literal_dialogue')+(branch?' ['+branch.label+']':'');let event=groups.get(id);
-  if(!event){event={source,function:id,line:branch?.line||fn?.line||1,eventId:fn?assignment(fn.code,'event_id')||'':'',title:fn?assignment(fn.code,'title')||'':'',dialogues:[],branches:[],references:[],sections:[]};event.sections.push({function:id,source,line:event.line,code:fn?.code||'',dialogues:event.dialogues,branches:event.branches});groups.set(id,event);}
+  if(!event){event={source,function:id,caseValue:branch?.parameter==='npc_id'?literalConstants(text.slice(fn.scopePos,fn.pos))[branch.label]:undefined,line:branch?.line||fn?.line||1,eventId:fn?assignment(fn.code,'event_id')||'':'',title:fn?assignment(fn.code,'title')||'':'',dialogues:[],branches:[],references:[],sections:[]};event.sections.push({function:id,source,line:event.line,code:fn?.code||'',dialogues:event.dialogues,branches:event.branches});groups.set(id,event);}
   event.references.push(...participants);
   if(typeof d.text==='string'&&['speaker','left','right'].some(k=>own(d,k)))event.dialogues.push(Object.fromEntries(['speaker','text','left','right','mood','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
   if(control)event.branches.push(Object.fromEntries(['type','prompt','text','next_label','anchor_label'].filter(k=>typeof d[k]==='string').map(k=>[k,d[k]])));
@@ -268,5 +268,17 @@ function fromHandle(handle){return load(async path=>{
  catch(e){if(e.name==='NotFoundError')return null;throw e;}
 },f=>URL.createObjectURL(f));}
 function fromFileList(fileList){const files=new Map();for(const f of fileList){const relative=f.webkitRelativePath.split('/').slice(1).join('/');if(relative)files.set(relative,f);}return load(async path=>files.get(path)||null,f=>URL.createObjectURL(f));}
-const api={paths,indexFromSources,fromHandle,fromFileList};if(typeof module!=='undefined')module.exports=api;root.GCSNPCProject=api;
+// Navigation uses the exact source scope, never a display title or a guessed event ID.
+function resolveEventTarget(event,records){
+ if(!event||!Array.isArray(records))return null;
+ const qualified=String(event.function||'').replace(/ \[[^\]]+\]$/,''),dot=qualified.lastIndexOf('.');
+ const owner=dot<0?'':qualified.slice(0,dot),fn=qualified.slice(dot+1);
+ if(!/^[A-Za-z_]\w*$/.test(fn)||owner&&!/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/.test(owner))return null;
+ const matches=records.filter(r=>r.manifest.sourcePath===event.source&&(r.manifest.className||'')===owner&&r.manifest.functionName===fn);
+ if(matches.length!==1)return null;
+ const r=matches[0],runtimeId=assignment(r.rawSource||'','event_id');
+ if(event.eventId&&runtimeId&&event.eventId!==runtimeId)return null;
+ return {id:r.manifest.id,...(typeof event.caseValue==='string'?{caseValue:event.caseValue}:{})};
+}
+const api={paths,indexFromSources,fromHandle,fromFileList,resolveEventTarget};if(typeof module!=='undefined')module.exports=api;root.GCSNPCProject=api;
 })(typeof window!=='undefined'?window:globalThis);

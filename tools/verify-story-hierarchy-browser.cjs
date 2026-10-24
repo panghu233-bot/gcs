@@ -20,10 +20,11 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
   await page.route('**/*',route=>route.abort());
   const connect=()=>page.evaluate(async files=>{
    const list=Object.entries(files).map(([name,bytes])=>{const b=new Blob([new Uint8Array(bytes)]);return {webkitRelativePath:'real-project/'+name,size:b.size,arrayBuffer:()=>b.arrayBuffer(),text:()=>b.text()};});
-   const w=await GCSEventProject.fromFileList(list),npc=await GCSNPCProject.fromFileList(list),get=path=>list.find(f=>f.webkitRelativePath==='real-project/'+path),documents={cards:JSON.parse(await get(GCSNingguAdapter.projectFiles.cards).text()),branches:JSON.parse(await get(GCSNingguAdapter.projectFiles.branches).text())},workspace=GCSCardWorkspace.createWorkspace({adapter:GCSNingguAdapter,documents}),s={connected:true,name:'凝顾 · 本地只读验收',eventWorkspace:w,records:workspace.records,branches:workspace.branches,npcRecords:npc.records,status:'connected',workspace};window.__directoryTest={s};
+   if(window.__npcNavigationMode){await GCSProject.openFiles(list);window.__directoryTest={s:GCSProject.getState()};return;}const w=await GCSEventProject.fromFileList(list),npc=await GCSNPCProject.fromFileList(list),get=path=>list.find(f=>f.webkitRelativePath==='real-project/'+path),documents={cards:JSON.parse(await get(GCSNingguAdapter.projectFiles.cards).text()),branches:JSON.parse(await get(GCSNingguAdapter.projectFiles.branches).text())},workspace=GCSCardWorkspace.createWorkspace({adapter:GCSNingguAdapter,documents}),s={connected:true,name:'凝顾 · 本地只读验收',eventWorkspace:w,records:workspace.records,branches:workspace.branches,npcRecords:npc.records,status:'connected',workspace};window.__directoryTest={s};
    window.GCSProject={getState:()=>s,selectEvent:id=>{s.eventWorkspace=s.eventWorkspace.selectEvent(id);window.dispatchEvent(new CustomEvent('gcs-project-change',{detail:{kind:'connection'}}));},report:message=>{throw Error(message);}};
-  },files);await connect();await page.locator('[data-module=events]').click();
+  },files);await page.evaluate(mode=>window.__npcNavigationMode=mode,process.argv.includes('--npc-navigation'));await connect();await page.locator('[data-module=events]').click();
 
+  if(process.argv.includes('--npc-navigation')){await require('./verify-npc-navigation-browser.cjs')({page,screens,errors});return;}
   if(process.argv.includes('--folding')){await require('./verify-story-folding-browser.cjs')({page,connect,screens,errors});return;}
   // The full historical acceptance explicitly opens categories, as a user now must.
   for(const group of await page.locator('#record-list > details:not([open])').all())await group.locator(':scope > summary').click();

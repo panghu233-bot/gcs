@@ -10,7 +10,7 @@ let displayOrder=stories?.normalizeOrder(saved('gcs-story-order-v1'))||[];const 
 const overviewViews=new Map(),blocked=()=>busy||work()?.locked||work()?.blocked||state().workspace?.locked;
 function canLeave(){if(blocked())return false;return !work()?.changes.length||window.confirm('当前事件还有未应用的修改。切换将丢弃这些草稿，是否继续？');}
 function clearSearch(){if($('search')?.value){$('search').value='';$('search').dispatchEvent(new Event('input',{bubbles:true}));}}
-function selectEvent(id,reveal=false,caseValue){const w=work();if(!w)return;if(id===w.manifest.id&&!overviewId&&!caseValue){if(reveal){clearSearch();revealRequested=true;renderList($('search')?.value||'');}return;}if(!canLeave())return;try{overviewId=null;overviewAnchor=null;pendingCase=caseValue?{id,value:caseValue}:null;if(reveal){clearSearch();revealRequested=true;}root.GCSProject.selectEvent(id);}catch(e){root.GCSProject.report(e.message);}}
+function selectEvent(id,reveal=false,caseValue){const w=work();if(!w)return;if(id===w.manifest.id&&!overviewId&&!caseValue){if(reveal){clearSearch();revealRequested=true;renderList($('search')?.value||'');}return true;}if(!canLeave())return;try{overviewId=null;overviewAnchor=null;pendingCase=caseValue?{id,value:caseValue}:null;if(reveal){clearSearch();revealRequested=true;}root.GCSProject.selectEvent(id);return work()?.manifest.id===id;}catch(e){root.GCSProject.report(e.message);}}
 function selectStory(story){if(!canLeave())return;overviewId=story.id;overviewAnchor=story.sourceIds[0];if(!$('search')?.value.trim()){groupState.set(story.id,true);store('gcs-story-expanded-v1',[...groupState]);}root.GCSProject.selectEvent(overviewAnchor);}
 function renderList(query=''){
  const w=work(),records=w?.eventRecords||(w?[{manifest:w.manifest,editable:!w.readOnly,capability:w.capability,lines:w.lines,rawSource:w.rawSource}]:[]);
@@ -197,5 +197,11 @@ function open(w,restoreReview=null){
  close.onclick=()=>{if(!busy)dialog.close();};dialog.showModal();
 }
 dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{session=null;});window.addEventListener('gcs-project-change',()=>{if(session&&!busy&&!valid(session))dialog.close();});
-root.GCSEventStudio={renderList,render,isPreviewOpen:w=>!overviewId&&!!viewStates.get(w)?.previewOpen};
+function openTarget(target){
+ if(!target||!work()?.eventRecords?.some(r=>r.manifest.id===target.id)||blocked())return false;
+ const result=selectEvent(target.id,true,target.caseValue);
+ if(result){const w=work();let view=viewStates.get(w);if(!view){view={previewOpen:false,renderToken:0};viewStates.set(w,view);}view.flowOpen=false;view.editing=false;}
+ return !!result;
+}
+root.GCSEventStudio={renderList,render,openTarget,isPreviewOpen:w=>!overviewId&&!!viewStates.get(w)?.previewOpen};
 })(window);

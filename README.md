@@ -1,4 +1,6 @@
-# GCS 0.13.2 · 按需展开的剧情层级目录
+# GCS 0.13.3 · NPC 直达真实剧情
+
+NPC「出场与事件」展开真实事件后，可点击「打开剧情」直达原剧情编辑器。以来源文件、所属类和函数精确匹配现有来源 ID，并核对已知事件身份；同名故事的不同阶段分别定位，茶馆人物条件使用源码常量定位。无法唯一匹配时保留详情并说明原因。模块切换保留内存草稿并提醒，替换剧情来源继续使用原有丢弃确认；保存锁定时禁止跳转。
 
 [打开工作台](https://panghu233-bot.github.io/gcs/)
 
@@ -33,3 +35,5 @@
 目录真实数据验收：`node tools/verify-story-hierarchy-browser.cjs --project <Godot根目录>`；可加 `--screenshots test-results/directory` 保存本地截图。仅通过限定的只读文件列表连接，不给浏览器正式项目写入句柄。`--url https://panghu233-bot.github.io/gcs/` 可验收已部署页面，静态程序加载后阻断后续网络，真实项目文件只驻留本地浏览器内存。旧复现工具 `tools/verify-directory-browser.cjs --baseline` 固定使用 `03e1956` 的列表与阅读代码，复现原有的 12 个匿名零句条目。
 
 目录折叠定向验收：`node tools/verify-story-hierarchy-browser.cjs --project <Godot根目录> --folding --screenshots test-results/story-folding`。使用真实项目只读输入，无界面 Edge 验证默认折叠、刷新恢复、搜索恢复、必要祖先定位、草稿拒绝 / 确认及排序重绘。
+
+NPC 跳转真实浏览器验收：`node tools/verify-story-hierarchy-browser.cjs --project <Godot根目录> --npc-navigation`，支持 `--url` 验收部署页面及 `--screenshots` 保存本地证据。真实文件仅驻留本地浏览器；截图与游戏源码不提交仓库。
