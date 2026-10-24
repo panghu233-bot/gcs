@@ -90,17 +90,32 @@
     const thumbnails=list.length>1?'<div class="npc-portrait-thumbnails" role="group" aria-label="切换本地人物立绘">'+list.map((v,i)=>'<button type="button" data-action="npc-portrait-select" data-index="'+i+'" aria-pressed="'+(v.ref===p.ref)+'" title="'+E(v.label+' · '+v.ref)+'"><img src="'+E(v.image)+'" alt="'+E(v.label)+'"><span>'+E(v.label)+'</span></button>').join('')+'</div>':'';
     return portrait({...n,image:p.image})+thumbnails+'<div class="npc-inline-actions"><button type="button" data-action="npc-portrait-replace" '+(!p.image||!p.path||!p.originalBytes||!root.GCSProject?.getState().handle?'disabled':'')+'>更换图片</button></div><p class="npc-muted">'+(!root.GCSProject?.getState().handle?'当前文件夹兼容模式只读；请用支持目录访问的 Chrome / Edge 重新连接。':!p.image||!p.originalBytes?'当前图片不存在或未取得原图快照，无法替换。':'仅替换当前版本的现有 PNG。先对比、备份和授权，才会写入游戏。')+'</p>'+info('源码立绘引用',p.ref)+info('已加载文件',p.path)+(p.sources||[]).map(v=>info('立绘依据',v.source+':'+v.line)).join('')+(n.portraitRef&&!n.image?'<p class="npc-muted">主立绘引用的文件不存在或无法读取。未按相似文件名替换。</p>':'');
   }
+  // Presentation uses the same exact source identities and audited story relationships as the directory.
   function actualEvents(n){
-    return (n.events||[]).map((e,index)=>{
+    const records=root.GCSProject?.getState().eventWorkspace?.eventRecords||[];
+    const stories=root.GCSEventStories?.build(records).allStories||[],groups=[],grouped=new Map();
+    const readable=value=>typeof value==='string'&&/[\u3400-\u9fff]/.test(value)&&!/[A-Za-z_]\w*\.[A-Za-z_]\w*|\b(?:create|get|stage)_[A-Za-z_]+/.test(value);
+    function summary(e){const d=(e.dialogues||[]).find(d=>typeof d.text==='string'&&d.text.trim());if(!d)return '人物出场 · 对白详情';const text=d.text.replace(/\s+/g,' ').trim();return (d.speaker?d.speaker+'的对白：':'对白：')+text.slice(0,36)+(text.length>36?'…':'');}
+    (n.events||[]).forEach((e,index)=>{
+      const target=root.GCSNPCProject?.resolveEventTarget(e,records),record=target&&records.find(r=>r.manifest.id===target.id);
+      const matches=target?stories.filter(s=>s.sourceIds.includes(target.id)):[],story=matches.length===1?matches[0]:null;
+      const children=story?.children.filter(c=>c.record.manifest.id===target.id&&(!c.caseValue||c.caseValue===target.caseValue))||[],child=children.length===1?children[0]:null;
+      const name=record&&root.GCSEventDirectory?.title(record.manifest);
+      const title=child?.caseValue?child.label:readable(name)?name:readable(e.title)?e.title:child?story.title+' · '+child.label:summary(e);
+      const item={e,index,target,title,child};
+      if(story?.grouped){let group=grouped.get(story.id);if(!group){group={story,items:[]};grouped.set(story.id,group);groups.push(group);}group.items.push(item);}else groups.push({items:[item]});
+    });
+    function eventDetails({e,index,target,title,child}){
       const sections=e.sections?.length?e.sections:[e],participants=[...new Set(e.references||(e.dialogues||[]).flatMap(d=>[d.speaker,d.left,d.right]).filter(Boolean))];
-      const title=e.title||e.eventId||'对白片段 · '+(e.function||'字面量');
-      const target=root.GCSNPCProject?.resolveEventTarget(e,root.GCSProject?.getState().eventWorkspace?.eventRecords||[]);
       const open=target?'<button type="button" data-action="npc-open-event" data-index="'+index+'">打开剧情 ↗</button>':'<p class="npc-muted">暂不能唯一定位剧情来源；可继续查看以下详情。</p>';
-      return '<details class="npc-real-event"><summary><span class="npc-real-event-title">'+E(title)+'</span><small>'+E([e.eventId,(e.dialogues||[]).length+' 句对白',participants.length+' 位参与人物'].filter(Boolean).join(' · '))+'</small></summary><div class="npc-real-event-body">'+open+info('事件 ID',e.eventId)+info('参与人物',participants.join('、'))+'<p class="npc-muted">触发条件未核实。以下按来源片段展示，包含不同分支，不代表一次播放顺序。</p>'+sections.map(section=>'<div class="npc-real-event-section">'+info('对白片段',section.function)+info('来源',section.source+':'+section.line)+
-        (section.dialogues||[]).map(d=>'<div class="npc-event-row"><div><strong>'+E(d.speaker||'旁白')+'</strong><p>'+E(d.text)+'</p><small>'+E([d.left&&'左侧：'+d.left,d.right&&'右侧：'+d.right,d.mood&&'表情：'+d.mood,d.anchor_label&&'分支锚点：'+d.anchor_label].filter(Boolean).join(' · '))+'</small></div></div>').join('')+
+      const advanced='<details class="npc-source-code"><summary>高级信息</summary>'+info('事件 ID',e.eventId)+sections.map(section=>info('对白函数',section.function)+info('来源',section.source+':'+section.line)+
         ((section.branches||[]).length?'<div class="npc-real-branches"><strong>分支与跳转标记</strong>'+(section.branches||[]).map(b=>'<p class="npc-muted">'+E(Object.entries(b).map(([k,v])=>k+'：'+v).join(' · '))+'</p>').join('')+'</div>':'')+
-        (section.code?'<details class="npc-source-code"><summary>查看该片段源码</summary><pre>'+E(section.code)+'</pre></details>':'')+'</div>').join('')+'</div></details>';
-    }).join('')||'<div class="npc-empty">当前定向读取的养成来源中，没有找到明确的对白关联。</div>';
+        (section.code?'<details class="npc-source-code"><summary>查看该片段源码</summary><pre>'+E(section.code)+'</pre></details>':'')).join('')+'</details>';
+      const kind={phase:'阶段',condition:'条件情况',choice:'玩家选项',retry:'条件重访'}[child?.kind];
+      return '<details class="npc-real-event" data-npc-event-index="'+index+'"><summary><span class="npc-real-event-title">'+E(title)+'</span><small>'+E([kind,(e.dialogues||[]).length+' 句对白',participants.length+' 位参与人物'].filter(Boolean).join(' · '))+'</small></summary><div class="npc-real-event-body">'+open+info('参与人物',participants.join('、'))+(child?.condition?info('已确认条件',child.condition):'')+'<p class="npc-muted">以下按来源片段展示，包含不同分支，不代表一次播放顺序。未标明的触发条件尚未核实。</p>'+sections.map(section=>'<div class="npc-real-event-section">'+
+        (section.dialogues||[]).map(d=>'<div class="npc-event-row"><div><strong>'+E(d.speaker||'旁白')+'</strong><p>'+E(d.text)+'</p><small>'+E([d.left&&'左侧：'+d.left,d.right&&'右侧：'+d.right,d.mood&&'表情：'+d.mood].filter(Boolean).join(' · '))+'</small></div></div>').join('')+'</div>').join('')+advanced+'</div></details>';
+    }
+    return groups.map(group=>group.story?'<details class="npc-real-story" data-npc-story-id="'+E(group.story.id)+'"><summary><span class="npc-real-event-title">'+E(group.story.title)+'</span><small>'+group.items.length+' 个出场片段 · 展开查看阶段与条件</small></summary><div class="npc-real-story-body"><p class="npc-muted">'+E(group.story.flow)+'</p>'+group.items.map(eventDetails).join('')+'</div></details>':group.items.map(eventDetails).join('')).join('')||'<div class="npc-empty">当前定向读取的养成来源中，没有找到明确的对白关联。</div>';
   }
   function actualMechanics(n){
     if(!n.hero)return box('英雄玩法',info('识别结果',n.npcKind==='unverified'?'仅发现立绘映射键，尚未确认出场':'在已读取的英雄配置中无匹配记录')+'<p class="npc-muted">好感、送礼和祝福字段留空，不使用演示数值。</p>');
@@ -125,7 +140,7 @@
     let content='';
     if(tab==='overview')content='<div class="npc-two-col">'+box('人物形象',actualPortrait(n))+box('真实人物信息',info('姓名 / 显示键',n.name)+info('身份依据',n.role)+info('事件 / 对白来源组',(n.events||[]).length)+info('同名敌人定义',(n.enemies||[]).length)+actualSources(n))+'</div>';
     if(tab==='portrait')content='<div class="npc-two-col">'+box('本地人物立绘',actualPortrait(n))+box('人物识别依据',info('显示键',n.name)+info('记录 ID',n.id)+actualSources(n)+'<p class="npc-muted">相同图片可被多个称谓共用，不据此合并人物。预览键和仅有映射的记录保留来源状态。</p>')+'</div>';
-    if(tab==='appear')content=box('养成事件与对白来源','<p class="npc-muted">标题和事件 ID 来自源码。缺少标题时保留对白片段名；仅合并有唯一直接调用依据的辅助片段。</p>'+actualEvents(n));
+    if(tab==='appear')content=box('养成事件与对白来源','<p class="npc-muted">故事名称和阶段沿用剧情目录已核实的关系；仅显示该人物的真实出场片段。未命名来源以对白摘要展示，技术依据收在高级信息。</p>'+actualEvents(n));
     if(tab==='mechanics')content=actualMechanics(n);
     if(tab==='combat')content=actualCombat(n);
     return '<div class="npc-studio"><div class="npc-head-note"><span>养成角色工作台 · 真实项目</span><span>立绘可替换 · 人物资料只读</span></div>'+tabs()+content+'</div>';
